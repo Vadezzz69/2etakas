@@ -1,41 +1,105 @@
 const { Events } = require("discord.js");
-const { lisaaAanaikaa } = require("../utils/tilastot");
 
-// Muistinvarainen kartta käynnissä olevista äänisessioista.
-// Nollautuu botin uudelleenkäynnistyksessä — hyväksyttävä kompromissi.
-const aktiivisetSessiot = new Map(); // "guildId:userId" -> liittymisaika (ms)
+const {
+    aloitaAaniSessio,
+    haeAaniSessio,
+    poistaAaniSessio,
+    lisaaAanaikaa
+} = require("../utils/tilastot");
 
 module.exports = {
+
     name: Events.VoiceStateUpdate,
+
     async execute(oldState, newState) {
 
-        const userId = newState.id ?? oldState.id;
-        const guildId = newState.guild.id;
-        const avain = `${guildId}:${userId}`;
+        try {
 
-        const oliAanessa = Boolean(oldState.channelId);
-        const onAanessa = Boolean(newState.channelId);
+            const guildId = newState.guild.id;
+            const userId = newState.id ?? oldState.id;
 
-        if (!oliAanessa && onAanessa) {
-            // Liittyi äänikanavaan
-            aktiivisetSessiot.set(avain, Date.now());
-            return;
-        }
+            const oliAanessa = Boolean(oldState.channelId);
+            const onAanessa = Boolean(newState.channelId);
 
-        if (oliAanessa && !onAanessa) {
-            // Poistui äänikanavasta kokonaan
-            const liittymisaika = aktiivisetSessiot.get(avain);
-            if (liittymisaika) {
-                const sekunnit = Math.floor((Date.now() - liittymisaika) / 1000);
-                aktiivisetSessiot.delete(avain);
-                try {
-                    await lisaaAanaikaa(guildId, userId, sekunnit);
-                } catch (err) {
-                    console.error("❌ Äänitilaston kirjaus epäonnistui:", err);
+            // ===============================
+            // Liittyi ensimmäistä kertaa
+            // ===============================
+
+            if (!oliAanessa && onAanessa) {
+
+                const sessio = await haeAaniSessio(
+                    guildId,
+                    userId
+                );
+
+                if (!sessio) {
+
+                    await aloitaAaniSessio(
+                        guildId,
+                        userId,
+                        Date.now()
+                    );
+
                 }
+
+                return;
+
             }
+
+            // ===============================
+            // Vaihtoi kanavaa
+            // ===============================
+
+            if (oliAanessa && onAanessa) {
+
+                return;
+
+            }
+
+            // ===============================
+            // Poistui äänikanavalta
+            // ===============================
+
+            if (oliAanessa && !onAanessa) {
+
+                const sessio = await haeAaniSessio(
+                    guildId,
+                    userId
+                );
+
+                if (!sessio) return;
+
+                const sekunnit = Math.floor(
+                    (Date.now() - sessio.joinedAt) / 1000
+                );
+
+                if (sekunnit > 0) {
+
+                    await lisaaAanaikaa(
+                        guildId,
+                        userId,
+                        sekunnit
+                    );
+
+                }
+
+                await poistaAaniSessio(
+                    guildId,
+                    userId
+                );
+
+            }
+
+        }
+        catch (err) {
+
+            console.error(
+                "❌ VoiceStateUpdate-virhe:",
+                err
+            );
+
         }
 
-        // Kanavan vaihto (oliAanessa && onAanessa) ei katkaise sessiota.
     }
+
 };
