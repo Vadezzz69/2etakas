@@ -21,4 +21,11 @@ commandHandler(client);
 eventHandler(client);
 
 // Kirjaudutaan Discordiin
-client.login(process.env.TOKEN);
+client.login(process.env.TOKEN)
+    .then(() => console.log("✅ Kirjautuminen onnistui."))
+    .catch(err => {
+        console.error("❌ Kirjautuminen epäonnistui:");
+        console.error(err);
+    });
+
+console.log("TOKEN löytyy:", !!process.env.TOKEN);
