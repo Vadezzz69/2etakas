@@ -35,12 +35,12 @@ module.exports = {
                 );
 
                 if (!sessio) {
-
+console.log("✅ Sessio tallennettu");
                     await aloitaAaniSessio(
                         guildId,
                         userId,
                         Date.now()
-                        console.log("✅ Sessio tallennettu");
+                        
                     );
 
                 }
