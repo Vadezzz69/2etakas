@@ -327,6 +327,85 @@ async function kayttajanViestisija(guildId, userId) {
 
 }
 
+// =====================================================
+// "ELÄVÄT" ÄÄNITILASTOT
+// Huomioivat myös juuri nyt käynnissä olevat äänisessiot,
+// eikä vain jo tallennettua (suljettua) aikaa. Näin esim.
+// /kayttajainfo näyttää oikean luvun vaikka kohde olisi
+// parhaillaan äänikanavalla eikä ole vielä poistunut sieltä.
+// =====================================================
+
+async function elavatSessiot(guildId) {
+
+    const rivit = await all(
+        `SELECT userId, joinedAt FROM active_voice_sessions WHERE guildId = ?`,
+        [guildId]
+    );
+
+    const nyt = Date.now();
+    const kartta = new Map();
+
+    for (const rivi of rivit) {
+        const sekunnit = Math.max(0, Math.floor((nyt - rivi.joinedAt) / 1000));
+        kartta.set(rivi.userId, sekunnit);
+    }
+
+    return kartta;
+
+}
+
+async function kayttajanAaniTanaanElavana(guildId, userId) {
+
+    const [tallennettu, elavat] = await Promise.all([
+        kayttajanAaniTanaan(guildId, userId),
+        elavatSessiot(guildId)
+    ]);
+
+    return tallennettu + (elavat.get(userId) ?? 0);
+
+}
+
+async function kayttajanAaniYhteensaElavana(guildId, userId) {
+
+    const [tallennettu, elavat] = await Promise.all([
+        kayttajanAaniYhteensa(guildId, userId),
+        elavatSessiot(guildId)
+    ]);
+
+    return tallennettu + (elavat.get(userId) ?? 0);
+
+}
+
+async function aaniListaElavana(guildId, limit = 10) {
+
+    const [tallennettu, elavat] = await Promise.all([
+        all(
+            `SELECT userId, seconds FROM voice_stats WHERE guildId = ? AND date = ?`,
+            [guildId, tanaan()]
+        ),
+        elavatSessiot(guildId)
+    ]);
+
+    const kartta = new Map(tallennettu.map(r => [r.userId, r.seconds]));
+
+    for (const [userId, sekunnit] of elavat) {
+        kartta.set(userId, (kartta.get(userId) ?? 0) + sekunnit);
+    }
+
+    return [...kartta.entries()]
+        .map(([userId, seconds]) => ({ userId, seconds }))
+        .sort((a, b) => b.seconds - a.seconds)
+        .slice(0, limit);
+
+}
+
+async function aktiivisinAanikanavassaElavana(guildId) {
+
+    const lista = await aaniListaElavana(guildId, 1);
+    return lista[0] ?? null;
+
+}
+
 module.exports = {
 
     tanaan,
@@ -356,6 +435,12 @@ module.exports = {
     haeAaniSessio,
     paivitaAaniSessio,
     poistaAaniSessio,
-    haeKaikkiAktiivisetSessiot
+    haeKaikkiAktiivisetSessiot,
+
+    elavatSessiot,
+    kayttajanAaniTanaanElavana,
+    kayttajanAaniYhteensaElavana,
+    aaniListaElavana,
+    aktiivisinAanikanavassaElavana
 
 };

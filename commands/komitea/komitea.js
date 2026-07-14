@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const {
     aktiivisinKirjoittaja,
-    aktiivisinAanikanavassa,
+    aktiivisinAanikanavassaElavana,
     aktiivisinKomennoissa
 } = require("../../utils/tilastot");
 const { RANGAISTUKSET, satunnainen, satunnaisVali } = require("../../utils/komiteadata");
@@ -21,7 +21,7 @@ module.exports = {
         // Haetaan kaikki kolme kategoriaa rinnakkain.
         const [kirjoittaja, aanessa, komentaja] = await Promise.all([
             aktiivisinKirjoittaja(guildId),
-            aktiivisinAanikanavassa(guildId),
+            aktiivisinAanikanavassaElavana(guildId),
             aktiivisinKomennoissa(guildId)
         ]);
 

@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
-const { viestiLista, aaniLista, komentoLista } = require("../../utils/tilastot");
+const { viestiLista, aaniListaElavana, komentoLista } = require("../../utils/tilastot");
 const { VARIT } = require("../../utils/tyyli");
 
 const MITALIT = ["🥇", "🥈", "🥉"];
@@ -33,7 +33,7 @@ module.exports = {
             otsikko = "💬 Tämän päivän viestiennätykset";
             muotoile = r => `**${r.count}** viestiä`;
         } else if (kategoria === "aani") {
-            rivit = await aaniLista(interaction.guildId);
+            rivit = await aaniListaElavana(interaction.guildId);
             otsikko = "🔊 Tämän päivän äänikanavaennätykset";
             muotoile = r => `**${Math.round(r.seconds / 60)}** minuuttia`;
         } else {

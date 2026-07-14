@@ -3,7 +3,7 @@ const { VARIT } = require("../../utils/tyyli");
 const {
     kayttajanViestitYhteensa,
     kayttajanViestitTanaan,
-    kayttajanAaniYhteensa,
+    kayttajanAaniYhteensaElavana,
     kayttajanKomentojaYhteensa,
     kayttajanSuosikkiKomento,
     kayttajanViestisija
@@ -44,7 +44,7 @@ module.exports = {
             await Promise.all([
                 kayttajanViestitYhteensa(interaction.guildId, user.id),
                 kayttajanViestitTanaan(interaction.guildId, user.id),
-                kayttajanAaniYhteensa(interaction.guildId, user.id),
+                kayttajanAaniYhteensaElavana(interaction.guildId, user.id),
                 kayttajanKomentojaYhteensa(interaction.guildId, user.id),
                 kayttajanSuosikkiKomento(interaction.guildId, user.id),
                 kayttajanViestisija(interaction.guildId, user.id)

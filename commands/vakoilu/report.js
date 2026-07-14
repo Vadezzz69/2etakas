@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
-const { kayttajanViestitTanaan, kayttajanAaniTanaan } = require("../../utils/tilastot");
+const { kayttajanViestitTanaan, kayttajanAaniTanaanElavana } = require("../../utils/tilastot");
 const { hashKoodinimi } = require("../../utils/vakoiludata");
 const { VARIT } = require("../../utils/tyyli");
 const { ehkaKaannaKutsujaksi } = require("../../utils/trolli");
@@ -21,7 +21,7 @@ module.exports = {
 
         const [viestit, aaniSekunnit] = await Promise.all([
             kayttajanViestitTanaan(interaction.guildId, kohde.id),
-            kayttajanAaniTanaan(interaction.guildId, kohde.id)
+            kayttajanAaniTanaanElavana(interaction.guildId, kohde.id)
         ]);
 
         const aaniMinuutit = Math.round(aaniSekunnit / 60);

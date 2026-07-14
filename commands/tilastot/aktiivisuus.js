@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
-const { kayttajanViestitTanaan, kayttajanAaniTanaan } = require("../../utils/tilastot");
+const { kayttajanViestitTanaan, kayttajanAaniTanaanElavana } = require("../../utils/tilastot");
 const { get } = require("../../utils/db");
 const { VARIT } = require("../../utils/tyyli");
 
@@ -17,7 +17,7 @@ module.exports = {
 
         const [viestit, aaniSekunnit, komennotRivi] = await Promise.all([
             kayttajanViestitTanaan(interaction.guildId, kayttaja.id),
-            kayttajanAaniTanaan(interaction.guildId, kayttaja.id),
+            kayttajanAaniTanaanElavana(interaction.guildId, kayttaja.id),
             get(
                 `SELECT COUNT(*) as count FROM command_usage
                  WHERE guildId = ? AND userId = ? AND timestamp >= ?`,
