@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const { satunnainen, SALAISUUDET } = require("../../utils/vakoiludata");
+const { VARIT } = require("../../utils/tyyli");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -11,7 +12,7 @@ module.exports = {
         const salaisuus = satunnainen(SALAISUUDET);
 
         const embed = new EmbedBuilder()
-            .setColor(0x1A1A1A)
+            .setColor(VARIT.PERUS)
             .setTitle("🔓 LUOKITELTU — Taso Omega")
             .setDescription(`||${salaisuus}||`)
             .setFooter({ text: "Klikkaa paljastaaksesi. Unohda heti lukemisen jälkeen." });

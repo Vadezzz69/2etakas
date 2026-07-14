@@ -1,4 +1,5 @@
 const { Events } = require("discord.js");
+const { kirjaaKomento } = require("../utils/tilastot");
 
 module.exports = {
     name: Events.InteractionCreate,
@@ -16,6 +17,11 @@ module.exports = {
         try {
 
             await command.execute(interaction, client);
+
+            if (interaction.guildId) {
+                kirjaaKomento(interaction.guildId, interaction.user.id, interaction.commandName)
+                    .catch(err => console.error("❌ Komentotilaston kirjaus epäonnistui:", err));
+            }
 
         } catch (err) {
 

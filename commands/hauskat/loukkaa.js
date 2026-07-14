@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const { run, get } = require("../../utils/db");
 const { arvonimi, satunnainenKommentti } = require("../../utils/vammadata");
+const { VARIT } = require("../../utils/tyyli");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -39,10 +40,10 @@ module.exports = {
             [interaction.guildId, user.id]
         );
 
-        const count = row.count;
+        const count = row?.count ?? 1;
 
         const embed = new EmbedBuilder()
-            .setColor(0xED4245)
+            .setColor(VARIT.AKSENTTI)
             .setTitle("🤕 Loukkaantumisraportti")
             .setThumbnail(user.displayAvatarURL())
             .setDescription(`${user} loukkaantui!\n**Syy:** ${reason}`)

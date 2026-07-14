@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const { hashKoodinimi } = require("../../utils/vakoiludata");
+const { VARIT } = require("../../utils/tyyli");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -18,7 +19,7 @@ module.exports = {
         const koodinimi = hashKoodinimi(user.id);
 
         const embed = new EmbedBuilder()
-            .setColor(0x2B2D31)
+            .setColor(VARIT.PERUS)
             .setTitle("🕵️ Salainen tiedosto")
             .setDescription(
                 `**${user.username}** tunnetaan komiteassa koodinimellä:\n\n` +

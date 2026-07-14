@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const { satunnainen, TEHTAVAT, hashKoodinimi } = require("../../utils/vakoiludata");
+const { VARIT } = require("../../utils/tyyli");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -12,7 +13,7 @@ module.exports = {
         const koodinimi = hashKoodinimi(interaction.user.id);
 
         const embed = new EmbedBuilder()
-            .setColor(0xB59410)
+            .setColor(VARIT.AKSENTTI)
             .setTitle("📋 Uusi tehtävä vastaanotettu")
             .setDescription(
                 `Agentti **${koodinimi}**, komitea on hyväksynyt sinulle seuraavan operaation:`

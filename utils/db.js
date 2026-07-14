@@ -14,6 +14,47 @@ db.serialize(() => {
             timestamp INTEGER NOT NULL
         )
     `);
+
+    db.run(`
+        CREATE TABLE IF NOT EXISTS message_stats (
+            guildId TEXT NOT NULL,
+            userId TEXT NOT NULL,
+            date TEXT NOT NULL,
+            count INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (guildId, userId, date)
+        )
+    `);
+
+    db.run(`
+        CREATE TABLE IF NOT EXISTS voice_stats (
+            guildId TEXT NOT NULL,
+            userId TEXT NOT NULL,
+            date TEXT NOT NULL,
+            seconds INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (guildId, userId, date)
+        )
+    `);
+
+    db.run(`
+        CREATE TABLE IF NOT EXISTS command_usage (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guildId TEXT NOT NULL,
+            userId TEXT NOT NULL,
+            command TEXT NOT NULL,
+            timestamp INTEGER NOT NULL
+        )
+    `);
+
+    db.run(`
+        CREATE TABLE IF NOT EXISTS warnings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guildId TEXT NOT NULL,
+            userId TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            moderatorId TEXT NOT NULL,
+            timestamp INTEGER NOT NULL
+        )
+    `);
 });
 
 function run(sql, params = []) {

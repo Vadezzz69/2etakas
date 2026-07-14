@@ -29,6 +29,7 @@ module.exports = (client) => {
                 continue;
             }
 
+            command.kategoria = folder;
             client.commands.set(command.data.name, command);
             count++;
 

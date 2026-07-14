@@ -1,5 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const { satunnainen, VAKOILURAPORTIT, hashKoodinimi } = require("../../utils/vakoiludata");
+const { VARIT } = require("../../utils/tyyli");
+const { ehkaKaannaKutsujaksi } = require("../../utils/trolli");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -11,20 +13,22 @@ module.exports = {
 
     async execute(interaction) {
 
-        const kohde = interaction.options.getUser("kohde");
+        const pyydetty = interaction.options.getUser("kohde");
 
-        if (kohde.id === interaction.client.user.id) {
+        if (pyydetty.id === interaction.client.user.id) {
             return interaction.reply({
                 content: "Et voi vakoilla minua. Minä vakoilen sinua. 👁️",
                 ephemeral: true
             });
         }
 
+        const { kohde, kaannetty, kommentti } = ehkaKaannaKutsujaksi(interaction, pyydetty);
+
         const raportti = satunnainen(VAKOILURAPORTIT);
         const koodinimi = hashKoodinimi(kohde.id);
 
         const embed = new EmbedBuilder()
-            .setColor(0x992D22)
+            .setColor(VARIT.AKSENTTI)
             .setTitle("📡 Valvontaraportti")
             .setThumbnail(kohde.displayAvatarURL())
             .addFields(
@@ -35,6 +39,10 @@ module.exports = {
             )
             .setFooter({ text: "TÄYSIN SALAINEN — ei jaettavaksi eteenpäin" })
             .setTimestamp();
+
+        if (kaannetty) {
+            embed.setDescription(kommentti);
+        }
 
         await interaction.reply({ embeds: [embed] });
 

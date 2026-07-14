@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const { get, all } = require("../../utils/db");
 const { arvonimi } = require("../../utils/vammadata");
+const { VARIT } = require("../../utils/tyyli");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -24,7 +25,7 @@ module.exports = {
                 [interaction.guildId, target.id]
             );
 
-            const count = row.count;
+            const count = row?.count ?? 0;
 
             if (count === 0) {
                 return interaction.reply(`${target.username} ei ole loukkaantunut kertaakaan. Vielä. 🍀`);
@@ -36,7 +37,7 @@ module.exports = {
             );
 
             const embed = new EmbedBuilder()
-                .setColor(0xED4245)
+                .setColor(VARIT.AKSENTTI)
                 .setTitle(`🩹 ${target.username}n loukkaantumistilastot`)
                 .setThumbnail(target.displayAvatarURL())
                 .addFields(
@@ -66,7 +67,7 @@ module.exports = {
         const mitalit = ["🥇", "🥈", "🥉"];
 
         const embed = new EmbedBuilder()
-            .setColor(0xED4245)
+            .setColor(VARIT.AKSENTTI)
             .setTitle("🏆 Palvelimen loukkaantumisten ennätyslista")
             .setDescription(
                 rows

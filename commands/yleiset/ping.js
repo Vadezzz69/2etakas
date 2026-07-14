@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
+const { VARIT } = require("../../utils/tyyli");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -13,7 +14,7 @@ module.exports = {
         const wsPing = client.ws.ping;
 
         const embed = new EmbedBuilder()
-            .setColor(0x5865F2)
+            .setColor(VARIT.PERUS)
             .setTitle("🏓 Pong!")
             .addFields(
                 { name: "Botin viive", value: `${roundtrip} ms`, inline: true },

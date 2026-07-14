@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
+const { VARIT } = require("../../utils/tyyli");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -10,7 +11,7 @@ module.exports = {
         const guild = interaction.guild;
 
         const embed = new EmbedBuilder()
-            .setColor(0x57F287)
+            .setColor(VARIT.PERUS)
             .setTitle(guild.name)
             .setThumbnail(guild.iconURL())
             .addFields(
