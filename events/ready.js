@@ -8,8 +8,8 @@ module.exports = {
         console.log(`✅ Kirjauduttu sisään käyttäjänä ${client.user.tag}`);
 
         client.user.setPresence({
-            activities: [{ name: "palvelinta", type: ActivityType.Watching }],
-            status: "online"
+            activities: [{ name: "Tapaamassa äitiäsi", type: ActivityType.Custom }],
+            status: "idle"
         });
 
     }

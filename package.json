@@ -21,7 +21,8 @@
     "discord-api-types": "^0.38.49",
     "discord.js": "^14.26.5",
     "dotenv": "^17.4.2",
-    "sqlite3": "^6.0.1"
+    "sqlite3": "^6.0.1" 
+    "postinstall": "npm rebuild sqlite3"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"
