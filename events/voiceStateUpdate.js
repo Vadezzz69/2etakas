@@ -40,8 +40,9 @@ module.exports = {
                         guildId,
                         userId,
                         Date.now()
+                        console.log("✅ Sessio tallennettu");
                     );
-console.log("✅ Sessio tallennettu");
+
                 }
 
                 return;
