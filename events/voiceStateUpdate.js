@@ -7,6 +7,8 @@ const {
     lisaaAanaikaa
 } = require("../utils/tilastot");
 
+console.log("🎤 VoiceStateUpdate käynnistyi");
+
 module.exports = {
 
     name: Events.VoiceStateUpdate,
@@ -39,7 +41,7 @@ module.exports = {
                         userId,
                         Date.now()
                     );
-
+console.log("✅ Sessio tallennettu");
                 }
 
                 return;
