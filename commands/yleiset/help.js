@@ -7,6 +7,7 @@ const KATEGORIA_OTSIKOT = {
     moderointi: "🛡️ Moderointi",
     vakoilu: "🕵️ Vakoilu",
     komitea: "😂 Komitea & trollit",
+    tutkinta: "📁 Tutkinnat & syyllisyys",
     hauskat: "🤕 Hauskat",
     pelit: "🎮 Pelit",
     tilastot: "📊 Tilastot"

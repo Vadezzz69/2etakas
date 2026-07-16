@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const { RANGAISTUKSET, satunnainen, satunnaisVali } = require("../../utils/komiteadata");
 const { VARIT } = require("../../utils/tyyli");
+const { kirjaaTuomio, lisaaSyyllisyytta } = require("../../utils/tutkintadata");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -15,6 +16,9 @@ module.exports = {
         const kayttaja = interaction.options.getUser("kayttaja");
         const tuomio = satunnainen(RANGAISTUKSET);
         const asianumero = satunnaisVali(1000, 9999);
+
+        await kirjaaTuomio(interaction.guildId, kayttaja.id, tuomio, "/tuomio", false);
+        await lisaaSyyllisyytta(interaction.guildId, kayttaja.id, 3, `/tuomio: ${tuomio}`);
 
         const embed = new EmbedBuilder()
             .setColor(VARIT.AKSENTTI)

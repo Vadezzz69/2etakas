@@ -6,6 +6,7 @@ const {
 } = require("../../utils/tilastot");
 const { RANGAISTUKSET, satunnainen, satunnaisVali } = require("../../utils/komiteadata");
 const { VARIT } = require("../../utils/tyyli");
+const { kirjaaTuomio, lisaaSyyllisyytta } = require("../../utils/tutkintadata");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -62,6 +63,9 @@ module.exports = {
         const valittu = satunnainen(vaihtoehdot);
         const rangaistus = satunnainen(RANGAISTUKSET);
         const paatosnumero = satunnaisVali(100, 999);
+
+        await kirjaaTuomio(guildId, valittu.userId, rangaistus, "/komitea", false);
+        await lisaaSyyllisyytta(guildId, valittu.userId, 3, `/komitea: ${rangaistus}`);
 
         const embed = new EmbedBuilder()
             .setColor(VARIT.AKSENTTI)

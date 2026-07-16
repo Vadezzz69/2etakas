@@ -220,3 +220,127 @@ säätää jokaisessa tiedostossa `ehkaKaannaKutsujaksi(interaction, kohde, 0.18
   `Routes.applicationCommands(CLIENT_ID)` — päivittyvät jopa tunnin viiveellä.
 - Muista kytkeä **Server Members Intent** päälle Developer Portalissa, tai
   `/spinner` ja `/syyllinen`-komennon varajärjestelmä eivät toimi.
+
+---
+
+## Päivitys: Tutkinnat, syyllisyys, äänestykset, automaattiset tuomiot
+
+Tämä osio kuvaa kierroksen jossa lisättiin pysyvä "tutkinta ja syyllisyys"
+-järjestelmä, automaattiset päivätuomiot sekä muutama muu ominaisuus.
+**Kaikki tämän osion data on pysyvää** — mitään ei koskaan tyhjennetä tai
+ylikirjoiteta, vaan uusi historia vain kertyy lisää (samaan tapaan kuin
+message_stats/voice_stats jo aiemmin), jotta dataa voi lukea kaukaakin
+historiasta.
+
+### Uudet tietokantataulut (`utils/db.js`)
+
+| Taulu | Tarkoitus |
+|---|---|
+| `guild_settings` | Palvelinkohtaiset asetukset (ilmoituskanava, viimeisin digest-päivä) |
+| `suspects` | Pysyvä epäiltyjen lista (`active`-lippu poiston sijaan) |
+| `investigations` | Tutkintatapaukset (avoin/suljettu, tuomio) |
+| `investigation_evidence` | Tutkintoihin liitetyt todisteet |
+| `guilt_log` | **Append-only** syyllisyysloki — nykyinen % lasketaan aina SUM:lla |
+| `votes` / `vote_ballots` | Syyllisyysäänestykset ja yksittäiset äänet |
+| `verdicts_log` | Kaikkien tuomioiden pysyvä historia (manuaaliset + automaattiset) |
+
+### Uudet komennot
+
+**`commands/tutkinta/`**
+- `/epaily lisaa|lista|poista` — pysyvä epäiltyjen lista
+- `/tutkinta aloita|todiste|sulje|lista` — case-tyylinen tutkintajärjestelmä. Tutkinnan sulkeminen lisää automaattisesti +15 syyllisyyspistettä ja kirjautuu tuomiohistoriaan.
+- `/syyllisyys [kayttaja]` — ilman käyttäjää näyttää koko palvelimen syyllisimmät (kaikkien aikojen SUM), käyttäjän kanssa tämän prosentin, historian ja tuomioiden määrän
+- `/aanestys kayttaja [kysymys] [kesto_sekuntia]` — nappipohjainen "Syyllinen ⚖️ / Viaton 🕊️" -äänestys. Tulos vaikuttaa automaattisesti syyllisyysprosenttiin (+12 syylliseksi äänestetty, -8 viattomaksi, +3 tasapeli/ei ääniä) ja kirjautuu tuomiohistoriaan.
+
+**`commands/hauskat/`**
+- `/roast kayttaja` — "AI-roast": yhdistää viestimäärän, äänikanava-ajan, komentojen käytön, syyllisyysprosentin, epäiltynä olon ja tuomioiden määrän yhdeksi moniosaiseksi roastiksi. Rule-based (ei oikea LLM-kutsu) — jos haluat aidosti tekoälyn generoimia roasteja, tarvitaan erillinen API-avain (esim. OpenAI/Anthropic) ja lisätoteutus.
+- `/meemi` — hakee satunnaisen meemin julkisesta meme-api.com-rajapinnasta (ei vaadi API-avainta, käyttää Node.js:n sisäänrakennettua `fetch`:iä). Suodattaa NSFW-leimatut tulokset pois.
+
+**`commands/tilastot/rankingit.js`**
+- `/rankingit kategoria aikavali` — kuten `/leaderboard`, mutta valittavalla aikavälillä: tänään / viimeiset 7 päivää / viimeiset 30 päivää / koko historia. `/leaderboard` näyttää edelleen vain tämän päivän tilanteen nopeaan tarkistukseen; `/rankingit` on pitkäaikaiseen tarkasteluun.
+
+**`commands/moderointi/ilmoituskanava.js`**
+- `/ilmoituskanava kanava` (vaatii Manage Server -oikeuden) — asettaa kanavan johon botti postaa automaattiset päivätuomiot.
+
+### Automaattiset päivätuomiot (`utils/ajastin.js`)
+
+Botti tarkistaa n. 10 minuutin välein (`kaynnistaAjastin()`, käynnistetään
+`index.js`:stä onnistuneen kirjautumisen jälkeen) jokaiselle palvelimelle
+jolla on `/ilmoituskanava` asetettu: onko tämän päivän postaus jo tehty?
+Jos ei, se rakentaa **eilisen** täydellisen datan pohjalta:
+
+- automaattisen tuomion (samalla logiikalla kuin `/komitea`, mutta eilisen datan pohjalta)
+- top 3 -viestittäjät eiliseltä
+
+...ja postaa ne asetettuun kanavaan, kirjaa tuomion `verdicts_log`:iin ja
+merkitsee päivän "hoidetuksi" (`guild_settings.lastDigestDate`), jotta sama
+päivä ei posti kahdesti vaikka botti käynnistyisi uudelleen välissä.
+
+### Olemassa olevien komentojen muutokset
+
+- `/tuomio` ja `/komitea` kirjaavat nyt jokaisen tuomionsa pysyvään
+  `verdicts_log`-tauluun ja lisäävät pienen (+3) syyllisyysvaikutuksen.
+- `/kayttajainfo` ja `/report` käyttävät edelleen "eläviä" äänitilastoja
+  (ks. aiempi päivitys) — ei muutoksia tähän logiikkaan.
+
+### Testaus
+
+Koska tätä ei voitu ajaa oikealla natiivilla `sqlite3`-moduulilla tässä
+kehitysympäristössä (Windows-binääri ei lataudu Linuxissa), kaikki uudet
+tietokantafunktiot testattiin Node.js:n sisäänrakennetulla `node:sqlite`-
+moduulilla oikealla SQL-syntaksilla (epäillyt, tutkinnat, todisteet,
+syyllisyysloki, äänestykset, asetukset, ajastimen digest-logiikka mukaan
+lukien ajastimen ensimmäinen automaattinen ajo). Kaikki testit läpäistiin.
+
+## Web-dashboard — futuristinen "OPIUM"-terminaali
+
+Botti käynnistää nyt myös oman web-dashboardin samassa prosessissa. Se avautuu
+osoitteessa **http://localhost:3000** (tai `DASHBOARD_PORT`-ympäristömuuttujan
+mukaisessa portissa) heti kun botti on kirjautunut sisään.
+
+```
+dashboard/
+├── server.js          # Express-palvelin + JSON-API, lukee suoraan botin datasta
+└── public/
+    ├── index.html      # Sivun rakenne
+    ├── style.css        # Tumma "valvontaterminaali"-ulkoasu
+    └── app.js           # Hakee datan API:sta ja piirtää sen, päivittyy 60s välein
+```
+
+### Mitä dashboard näyttää
+
+- **Ylätunniste**: elävä kello, palvelinvalitsin (jos botti on usealla palvelimella), vilkkuva "live"-indikaattori
+- **Tapausnumero + neljä avainlukua**: jäsenmäärä, aktiiviset äänisessiot, avoimet epäilyt, avoimet tutkinnat
+- **Aktiivisuusrankingit**: viestit / äänikanava / komennot, valittavalla aikavälillä (tänään / 7 pv / 30 pv / kaikki), oikeilla käyttäjänimillä ja avatareilla
+- **Syyllisyysaste**: syyllisimmät käyttäjät palkkeineen
+- **Epäiltyjen dossier**: syy on oletuksena "redaktoitu" (musta palkki) — viedään hiiri päälle tai tabbaa näppäimistöllä paljastaaksesi
+- **Avoimet tutkinnat**: tapausnumerot, otsikot, kohdehenkilöt
+
+### Käyttöönotto
+
+Ei vaadi mitään ylimääräistä asetusta — `npm install` asentaa `express`-
+riippuvuuden, ja dashboard käynnistyy automaattisesti botin kanssa. Konsoliin
+tulostuu rivi:
+```
+🖥️  Dashboard käynnissä: http://localhost:3000
+```
+
+### Tärkeä turvallisuushuomio
+
+Dashboard **ei vaadi kirjautumista** ja näyttää palvelimen aktiivisuusdataa
+(käyttäjänimet, syyllisyysprosentit, epäilyt). Se on tarkoitettu vain
+**paikalliseen käyttöön omalla koneellasi** (`localhost`). Älä avaa
+`DASHBOARD_PORT`-porttia julkiseen internetiin (esim. reitittimen
+porttiohjauksella) ilman että lisäät ensin kirjautumisen suojaksi — muuten
+kuka tahansa netissä näkisi palvelimenne aktiivisuustiedot.
+
+### Design-ratkaisut
+
+Väripaletti ja typografia on rakennettu botin oman sisällön ympärille sen
+sijaan että käytettäisiin geneeristä "musta tausta + yksi neonväri"
+-oletusta: veren punainen (`--alert`) tarkoittaa syyllisyyttä/hälytystä,
+kylmä sininen-vihreä (`--watch`) tarkoittaa elävää/aktiivista tilaa — kaksi
+erillistä, sisällöllisesti perusteltua väriä yhden sijaan. Epäiltyjen syyt
+on piilotettu mustalla "redaktointipalkilla" joka pyyhkiytyy pois hover/focus
+-tilassa — viittaa suoraan botin omaan salaisten tiedostojen teemaan.
+Näppäimistöllä navigointi ja `prefers-reduced-motion` on huomioitu.

@@ -65,4 +65,64 @@ function valitseRoast({ viestitYhteensa, aaniSekunnitYhteensa }) {
     return satunnainen(linjat);
 }
 
-module.exports = { valitseRoast, satunnainen, ITSE_KAANNOS_KOMMENTIT };
+// =====================================================
+// LAAJA "AI-ROAST" — /roast-komentoa varten.
+// Yhdistää useamman datapisteen yhtä aikaa yhdeksi
+// moniosaiseksi, "tekoälyavusteiselta" vaikuttavalta roastilta.
+// Rule-based, ei oikeaa LLM-kutsua — mutta rakennettu niin että
+// jokainen kohde saa juuri omaan dataansa sopivan tuloksen.
+// =====================================================
+
+function laajaRoast({
+    viestitYhteensa = 0,
+    aaniSekunnitYhteensa = 0,
+    komentojaYhteensa = 0,
+    syyllisyysprosentti = 0,
+    onEpailty = false,
+    tuomioita = 0
+}) {
+
+    const havainnot = [];
+
+    if (viestitYhteensa === 0) {
+        havainnot.push("Kohde ei ole kirjoittanut yhtään viestiä koko historian aikana. Joko botti tai valistunut mykkä.");
+    } else if (viestitYhteensa < 10) {
+        havainnot.push(satunnainen(ROAST_VAHAN_VIESTEJA));
+    } else if (viestitYhteensa > 300) {
+        havainnot.push(satunnainen(ROAST_PALJON_VIESTEJA));
+    }
+
+    if (aaniSekunnitYhteensa === 0) {
+        havainnot.push(satunnainen(ROAST_EI_AANTA));
+    } else if (aaniSekunnitYhteensa > 3600 * 5) {
+        havainnot.push(satunnainen(ROAST_PALJON_AANTA));
+    }
+
+    if (komentojaYhteensa > 100) {
+        havainnot.push("Komentojen käyttömäärä viittaa siihen, ettei kohteella ole enää mitään elämää tämän botin ulkopuolella.");
+    } else if (komentojaYhteensa === 0) {
+        havainnot.push("Kohde ei ole koskaan käyttänyt yhtäkään komentoa. Epäilyttävän varovaista.");
+    }
+
+    if (syyllisyysprosentti > 70) {
+        havainnot.push(`Syyllisyysprosentti ${syyllisyysprosentti}% on niin korkea, että komitea harkitsee jo oman selliosaston perustamista.`);
+    } else if (syyllisyysprosentti === 0) {
+        havainnot.push("Syyllisyysprosentti on tasan 0%. Joko täysin viaton, tai erittäin taitava peittelemään jälkensä.");
+    }
+
+    if (onEpailty) {
+        havainnot.push("Kohde on jo valmiiksi komitean epäiltyjen listalla. Tämä ei tullut yllätyksenä kenellekään.");
+    }
+
+    if (tuomioita > 3) {
+        havainnot.push(`${tuomioita} aiempaa tuomiota puhuu puolestaan — tämä ei ole ensikertalainen.`);
+    }
+
+    havainnot.push(...ROAST_YLEINEN.slice(0, 1).map(l => satunnainen(ROAST_YLEINEN)));
+
+    // Poistetaan mahdolliset duplikaatit ja rajataan pituus siedettäväksi.
+    return [...new Set(havainnot)].slice(0, 4);
+
+}
+
+module.exports = { valitseRoast, laajaRoast, satunnainen, ITSE_KAANNOS_KOMMENTIT };

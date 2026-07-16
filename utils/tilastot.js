@@ -406,6 +406,98 @@ async function aktiivisinAanikanavassaElavana(guildId) {
 
 }
 
+// =====================================================
+// AIKAVÄLILLÄ SUODATETUT RANKINGIT
+// "tanaan" / "viikko" / "kuukausi" / "kaikki"
+// Kaikki perustuu message_stats/voice_stats-tauluihin, jotka
+// kertyvät päivä kerrallaan eikä koskaan tyhjene — data on
+// siis aina luettavissa mielivaltaisen kauas historiaan.
+// =====================================================
+
+function aikavaliAlkupaiva(aikavali) {
+
+    const nyt = new Date();
+
+    if (aikavali === "kaikki") return "0000-01-01";
+
+    if (aikavali === "viikko") {
+        const d = new Date(nyt);
+        d.setUTCDate(d.getUTCDate() - 7);
+        return d.toISOString().slice(0, 10);
+    }
+
+    if (aikavali === "kuukausi") {
+        const d = new Date(nyt);
+        d.setUTCDate(d.getUTCDate() - 30);
+        return d.toISOString().slice(0, 10);
+    }
+
+    return tanaan();
+
+}
+
+async function viestiListaAikavalilla(guildId, aikavali, limit = 10) {
+
+    const alkupaiva = aikavaliAlkupaiva(aikavali);
+
+    return all(
+        `SELECT userId, SUM(count) as count
+         FROM message_stats
+         WHERE guildId = ? AND date >= ?
+         GROUP BY userId
+         ORDER BY count DESC
+         LIMIT ?`,
+        [guildId, alkupaiva, limit]
+    );
+
+}
+
+async function aaniListaAikavalilla(guildId, aikavali, limit = 10) {
+
+    const alkupaiva = aikavaliAlkupaiva(aikavali);
+
+    const [tallennettu, elavat] = await Promise.all([
+        all(
+            `SELECT userId, SUM(seconds) as seconds
+             FROM voice_stats
+             WHERE guildId = ? AND date >= ?
+             GROUP BY userId`,
+            [guildId, alkupaiva]
+        ),
+        elavatSessiot(guildId)
+    ]);
+
+    const kartta = new Map(tallennettu.map(r => [r.userId, r.seconds]));
+
+    for (const [userId, sekunnit] of elavat) {
+        kartta.set(userId, (kartta.get(userId) ?? 0) + sekunnit);
+    }
+
+    return [...kartta.entries()]
+        .map(([userId, seconds]) => ({ userId, seconds }))
+        .sort((a, b) => b.seconds - a.seconds)
+        .slice(0, limit);
+
+}
+
+async function komentoListaAikavalilla(guildId, aikavali, limit = 10) {
+
+    const alkuAika = aikavali === "kaikki"
+        ? 0
+        : new Date(`${aikavaliAlkupaiva(aikavali)}T00:00:00.000Z`).getTime();
+
+    return all(
+        `SELECT userId, COUNT(*) as count
+         FROM command_usage
+         WHERE guildId = ? AND timestamp >= ?
+         GROUP BY userId
+         ORDER BY count DESC
+         LIMIT ?`,
+        [guildId, alkuAika, limit]
+    );
+
+}
+
 module.exports = {
 
     tanaan,
@@ -441,6 +533,11 @@ module.exports = {
     kayttajanAaniTanaanElavana,
     kayttajanAaniYhteensaElavana,
     aaniListaElavana,
-    aktiivisinAanikanavassaElavana
+    aktiivisinAanikanavassaElavana,
+
+    aikavaliAlkupaiva,
+    viestiListaAikavalilla,
+    aaniListaAikavalilla,
+    komentoListaAikavalilla
 
 };
