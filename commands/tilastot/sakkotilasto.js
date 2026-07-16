@@ -24,7 +24,7 @@ module.exports = {
             if (i === 1) sija = "🥈";
             if (i === 2) sija = "🥉";
 
-            return `${sija} <@${rivi.userId}> — **${rivi.maara} sakkoa**`;
+            return `${sija} <@${rivi.userId}> — **${rivi.sakkoja} sakkoa**`;
         });
 
         const embed = new EmbedBuilder()
