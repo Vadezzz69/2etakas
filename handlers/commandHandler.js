@@ -22,12 +22,20 @@ module.exports = (client) => {
         for (const file of commandFiles) {
 
             const filePath = path.join(folderPath, file);
-            const command = require(filePath);
+                let command;
 
-            if (!command?.data || !command?.execute) {
-                console.warn(`⚠️  Komennosta ${file} puuttuu "data" tai "execute" — ohitetaan.`);
-                continue;
-            }
+                    try {
+                        command = require(filePath);
+                            } catch (err) {
+                                console.error(`❌ Virhe ladattaessa komentoa ${file}:`);
+                                console.error(err);
+                                continue;
+}
+
+                            if (!command?.data || !command?.execute) {
+                       console.warn(`⚠️ Komennosta ${file} puuttuu "data" tai "execute" — ohitetaan.`);
+                                  continue;
+                }
 
             command.kategoria = folder;
             client.commands.set(command.data.name, command);
