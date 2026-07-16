@@ -1,5 +1,12 @@
 require("dotenv").config();
 
+if (process.env.BOT_SECRET !== "Komitea2026SalainenAvain") {
+    console.error("❌ Virheellinen BOT_SECRET. Bottia ei käynnistetä.");
+    process.exit(1);
+}
+
+
+
 const { Client, GatewayIntentBits } = require("discord.js");
 
 const commandHandler = require("./handlers/commandHandler");

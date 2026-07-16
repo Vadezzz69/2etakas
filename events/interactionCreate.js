@@ -16,7 +16,11 @@ module.exports = {
 
         try {
 
-            await command.execute(interaction, client);
+                 console.log(`➡️ Aloitetaan komento: ${interaction.commandName}`);
+
+                 await command.execute(interaction, client);
+
+                 console.log(`✅ Komento valmis: ${interaction.commandName}`);
 
             if (interaction.guildId) {
                 kirjaaKomento(interaction.guildId, interaction.user.id, interaction.commandName)
@@ -25,8 +29,11 @@ module.exports = {
 
         } catch (err) {
 
-            console.error(`❌ Virhe komennossa "${interaction.commandName}":`, err);
-
+                    console.error("==================================");
+                    console.error(`❌ Virhe komennossa: ${interaction.commandName}`);
+                    console.error(err);
+                    console.error(err.stack);
+                    console.error("==================================");
             const errorReply = {
                 content: "Komennon suorittaminen epäonnistui. 😕",
                 ephemeral: true

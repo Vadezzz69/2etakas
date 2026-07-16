@@ -200,7 +200,59 @@ async function haeTuomioidenMaara(guildId, userId) {
     );
     return row?.maara ?? 0;
 }
+async function kirjaaSakko(guildId, userId, amount, unit, reason, issuedBy) {
+    await run(
+        `INSERT INTO fines
+        (guildId, userId, amount, unit, reason, issuedBy, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+            guildId,
+            userId,
+            amount,
+            unit,
+            reason,
+            issuedBy,
+            Date.now()
+        ]
+    );
+}
 
+async function haeSakot(guildId, userId) {
+    return all(
+        `SELECT *
+         FROM fines
+         WHERE guildId = ?
+         AND userId = ?
+         ORDER BY timestamp DESC`,
+        [guildId, userId]
+    );
+}
+
+async function haeSakkojenMaara(guildId, userId) {
+    const row = await get(
+        `SELECT COUNT(*) AS maara
+         FROM fines
+         WHERE guildId = ?
+         AND userId = ?`,
+        [guildId, userId]
+    );
+
+    return row?.maara ?? 0;
+}
+
+async function haeSuurimmatSakot(guildId, limit = 10) {
+    return all(
+        `SELECT
+            userId,
+            COUNT(*) AS sakkoja
+         FROM fines
+         WHERE guildId = ?
+         GROUP BY userId
+         ORDER BY sakkoja DESC
+         LIMIT ?`,
+        [guildId, limit]
+    );
+}
 module.exports = {
     asetaIlmoituskanava,
     haeAsetukset,
@@ -231,5 +283,11 @@ module.exports = {
 
     kirjaaTuomio,
     haeTuomiohistoria,
-    haeTuomioidenMaara
+    haeTuomioidenMaara,
+
+    kirjaaSakko,
+    haeSakot,
+    haeSakkojenMaara,
+    haeSuurimmatSakot,
 };
+

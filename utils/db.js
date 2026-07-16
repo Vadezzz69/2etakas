@@ -211,7 +211,21 @@ db.serialize(() => {
             timestamp INTEGER NOT NULL
         )
     `);
-
+// ==========================
+// Sakkohistoria
+// ==========================
+db.run(`
+    CREATE TABLE IF NOT EXISTS fines (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        guildId TEXT NOT NULL,
+        userId TEXT NOT NULL,
+        amount INTEGER NOT NULL,
+        unit TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        issuedBy TEXT NOT NULL,
+        timestamp INTEGER NOT NULL
+    )
+`);
 });
 
 function run(sql, params = []) {
