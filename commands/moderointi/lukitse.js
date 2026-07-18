@@ -1,5 +1,5 @@
-const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require("discord.js");
-const { VARIT } = require("../../utils/tyyli");
+const { SlashCommandBuilder, PermissionFlagsBits } = require("discord.js");
+const { warning } = require("../../utils/ui");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -11,18 +11,16 @@ module.exports = {
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
 
     async execute(interaction) {
-
-        const syy = interaction.options.getString("syy") ?? "Syytä ei annettu";
+        const reason = interaction.options.getString("syy") ?? "Syytä ei annettu";
 
         await interaction.channel.permissionOverwrites.edit(interaction.guild.roles.everyone, {
             SendMessages: false
         });
 
-        const embed = new EmbedBuilder()
-            .setColor(VARIT.VAROITUS)
-            .setDescription(`🔒 Kanava lukittu.\n**Syy:** ${syy}`);
-
-        await interaction.reply({ embeds: [embed] });
-
+        await interaction.reply({
+            embeds: [warning({
+                description: `🔒 Kanava lukittu.\n**Syy:** ${reason}`
+            })]
+        });
     }
 };

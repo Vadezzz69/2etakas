@@ -1,7 +1,7 @@
-const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
-const { kayttajanViestitTanaan, kayttajanAaniTanaanElavana } = require("../../utils/tilastot");
-const { get } = require("../../utils/db");
-const { VARIT } = require("../../utils/tyyli");
+const { SlashCommandBuilder } = require("discord.js");
+const { stats, formatDuration } = require("../../utils/ui");
+const { analyzeUserStats, collectUserStats } = require("../../utils/statsEngine");
+const { generateRoast } = require("../../utils/roastEngine");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -12,30 +12,26 @@ module.exports = {
         ),
 
     async execute(interaction) {
-
-        const kayttaja = interaction.options.getUser("kayttaja") ?? interaction.user;
-
-        const [viestit, aaniSekunnit, komennotRivi] = await Promise.all([
-            kayttajanViestitTanaan(interaction.guildId, kayttaja.id),
-            kayttajanAaniTanaanElavana(interaction.guildId, kayttaja.id),
-            get(
-                `SELECT COUNT(*) as count FROM command_usage
-                 WHERE guildId = ? AND userId = ? AND timestamp >= ?`,
-                [interaction.guildId, kayttaja.id, new Date().setUTCHours(0, 0, 0, 0)]
-            )
+        const user = interaction.options.getUser("kayttaja") ?? interaction.user;
+        const [analysis, userStats, roast] = await Promise.all([
+            analyzeUserStats(interaction.guildId, user.id),
+            collectUserStats(interaction.guildId, user.id),
+            generateRoast(interaction.guildId, user.id)
         ]);
 
-        const embed = new EmbedBuilder()
-            .setColor(VARIT.PERUS)
-            .setTitle(`📊 ${kayttaja.username}n aktiivisuus tänään`)
-            .setThumbnail(kayttaja.displayAvatarURL())
-            .addFields(
-                { name: "Viestejä", value: `${viestit}`, inline: true },
-                { name: "Aikaa äänikanavalla", value: `${Math.round(aaniSekunnit / 60)} min`, inline: true },
-                { name: "Komentoja käytetty", value: `${komennotRivi?.count ?? 0}`, inline: true }
-            );
+        const embed = stats({
+            title: `📊 ${user.username}n aktiivisuus tänään`,
+            thumbnail: user.displayAvatarURL(),
+            description: analysis.summary,
+            fields: [
+                { name: "Viestejä", value: `${userStats.messages.today}`, inline: true },
+                { name: "Äänikanavalla", value: formatDuration(userStats.voice.todaySeconds), inline: true },
+                { name: "Komentoja", value: `${userStats.commandUsage}`, inline: true },
+                { name: "Komitean huomio", value: roast },
+                { name: "Merkinnät", value: analysis.badges.join(" • ") || "Ei erityisiä merkintöjä" }
+            ]
+        });
 
         await interaction.reply({ embeds: [embed] });
-
     }
 };

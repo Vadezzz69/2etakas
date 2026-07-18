@@ -1,5 +1,5 @@
-const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
-const { VARIT } = require("../../utils/tyyli");
+const { SlashCommandBuilder } = require("discord.js");
+const { info } = require("../../utils/ui");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -7,21 +7,18 @@ module.exports = {
         .setDescription("Näyttää botin viiveen."),
 
     async execute(interaction, client) {
+        const reply = await interaction.reply({ content: "Mitataan...", fetchReply: true });
+        const roundtrip = reply.createdTimestamp - interaction.createdTimestamp;
 
-        const sent = await interaction.reply({ content: "Mitataan...", fetchReply: true });
-
-        const roundtrip = sent.createdTimestamp - interaction.createdTimestamp;
-        const wsPing = client.ws.ping;
-
-        const embed = new EmbedBuilder()
-            .setColor(VARIT.PERUS)
-            .setTitle("🏓 Pong!")
-            .addFields(
-                { name: "Botin viive", value: `${roundtrip} ms`, inline: true },
-                { name: "API-viive", value: `${wsPing} ms`, inline: true }
-            );
-
-        await interaction.editReply({ content: null, embeds: [embed] });
-
+        await interaction.editReply({
+            content: null,
+            embeds: [info({
+                title: "🏓 Pong!",
+                fields: [
+                    { name: "Botin viive", value: `${roundtrip} ms`, inline: true },
+                    { name: "API-viive", value: `${client.ws.ping} ms`, inline: true }
+                ]
+            })]
+        });
     }
 };

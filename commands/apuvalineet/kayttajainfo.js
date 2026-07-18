@@ -1,21 +1,43 @@
-const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
-const { VARIT } = require("../../utils/tyyli");
+const { SlashCommandBuilder } = require("discord.js");
+const { analyzeUserStats } = require("../../utils/statsEngine");
+const { analyzeRoastFromStats } = require("../../utils/roastEngine");
 const {
-    kayttajanViestitYhteensa,
-    kayttajanViestitTanaan,
-    kayttajanAaniYhteensaElavana,
-    kayttajanKomentojaYhteensa,
-    kayttajanSuosikkiKomento,
-    kayttajanViestisija
-} = require("../../utils/tilastot");
-const { valitseRoast } = require("../../utils/roastdata");
+    buildProfileEmbed,
+    ICONS,
+    formatNumber,
+    formatDuration,
+    formatDate,
+    formatRanking,
+    mentionUser
+} = require("../../utils/ui");
 const { ehkaKaannaKutsujaksi } = require("../../utils/trolli");
 
-function muotoileAika(sekunnit) {
-    const tunnit = Math.floor(sekunnit / 3600);
-    const minuutit = Math.round((sekunnit % 3600) / 60);
-    if (tunnit === 0) return `${minuutit} min`;
-    return `${tunnit} h ${minuutit} min`;
+// Same probability as before the refactor — kept as a named constant instead
+// of a bare literal at the call site.
+const SELF_REDIRECT_CHANCE = 0.18;
+
+/** Discord-account fields are unique to this command (not server activity
+ *  data), so they stay here rather than moving into the Stats Engine. */
+async function buildAccountFields(interaction, user) {
+    const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+
+    const roles = member
+        ? [...member.roles.cache.values()]
+            .filter(role => role.id !== interaction.guild.id)
+            .sort((a, b) => b.position - a.position)
+        : [];
+
+    return [
+        { name: "Liittyi Discordiin", value: formatDate(user.createdTimestamp), inline: true },
+        { name: "Liittyi palvelimelle", value: member ? formatDate(member.joinedTimestamp) : "Ei tiedossa", inline: true },
+        { name: "Rooleja", value: roles.length ? `${roles.length}` : "Ei yhtään", inline: true }
+    ];
+}
+
+/** Formats the "favorite command" fact from the Stats Engine's extended bundle. */
+function formatFavoriteCommand(favoriteCommand) {
+    if (!favoriteCommand) return "Ei vielä yhtään";
+    return `/${favoriteCommand.command} (${favoriteCommand.count}x)`;
 }
 
 module.exports = {
@@ -36,91 +58,38 @@ module.exports = {
         const pyydetty = interaction.options.getUser("kayttaja") ?? interaction.user;
 
         // Komitea saattaa silloin tällöin kääntää tutkan takaisin kysyjään itseensä.
-        const { kohde: user, kaannetty, kommentti } = ehkaKaannaKutsujaksi(interaction, pyydetty, 0.18);
+        const { kohde: user, kaannetty, kommentti } = ehkaKaannaKutsujaksi(interaction, pyydetty, SELF_REDIRECT_CHANCE);
 
-        const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+        // One Stats Engine call collects everything: today/total messages,
+        // voice time, command usage, fines, investigations, rankings, and the
+        // member's favorite command. The Roast Engine then reuses that exact
+        // same bundle (`profile.roastContext`) instead of re-querying it.
+        const [accountFields, profile] = await Promise.all([
+            buildAccountFields(interaction, user),
+            analyzeUserStats(interaction.guildId, user.id)
+        ]);
 
-        const [viestitYhteensa, viestitTanaan, aaniYhteensa, komentojaYhteensa, suosikkiKomento, sijaTieto] =
-            await Promise.all([
-                kayttajanViestitYhteensa(interaction.guildId, user.id),
-                kayttajanViestitTanaan(interaction.guildId, user.id),
-                kayttajanAaniYhteensaElavana(interaction.guildId, user.id),
-                kayttajanKomentojaYhteensa(interaction.guildId, user.id),
-                kayttajanSuosikkiKomento(interaction.guildId, user.id),
-                kayttajanViestisija(interaction.guildId, user.id)
-            ]);
+        const roast = analyzeRoastFromStats(profile.roastContext);
+        const stats = profile.roastContext;
 
-        const roast = valitseRoast({
-            viestitYhteensa,
-            aaniSekunnitYhteensa: aaniYhteensa
+        const embed = buildProfileEmbed({
+            title: `${ICONS.committee} Salainen tiedosto — ${user.tag}`,
+            thumbnail: user.displayAvatarURL(),
+            accountFields,
+            statFields: [
+                { name: `${ICONS.messages} Viestejä yhteensä`, value: formatNumber(stats.messages.total), inline: true },
+                { name: `${ICONS.calendar} Viestejä tänään`, value: formatNumber(stats.messages.today), inline: true },
+                { name: `${ICONS.voice} Aikaa äänikanavalla`, value: formatDuration(stats.voice.totalSeconds), inline: true },
+                { name: `${ICONS.commands} Komentoja käytetty`, value: formatNumber(stats.commandUsage), inline: true },
+                { name: "⭐ Suosikkikomento", value: formatFavoriteCommand(stats.favoriteCommand), inline: true },
+                { name: `${ICONS.rank} Sija viestitilastossa`, value: formatRanking(stats.rankings.messages), inline: true }
+            ],
+            profile,
+            roastText: roast.text
         });
 
-        const roolit = member
-            ? [...member.roles.cache.values()]
-                .filter(r => r.id !== interaction.guild.id)
-                .sort((a, b) => b.position - a.position)
-            : [];
-
-        const embed = new EmbedBuilder()
-            .setColor(VARIT.PERUS)
-            .setTitle(`🕵️ Salainen tiedosto — ${user.tag}`)
-            .setThumbnail(user.displayAvatarURL())
-            .addFields(
-                {
-                    name: "Liittyi Discordiin",
-                    value: `<t:${Math.floor(user.createdTimestamp / 1000)}:D>`,
-                    inline: true
-                },
-                {
-                    name: "Liittyi palvelimelle",
-                    value: member ? `<t:${Math.floor(member.joinedTimestamp / 1000)}:D>` : "Ei tiedossa",
-                    inline: true
-                },
-                {
-                    name: "Rooleja",
-                    value: roolit.length ? `${roolit.length}` : "Ei yhtään",
-                    inline: true
-                },
-                {
-                    name: "💬 Viestejä yhteensä",
-                    value: `${viestitYhteensa}`,
-                    inline: true
-                },
-                {
-                    name: "📅 Viestejä tänään",
-                    value: `${viestitTanaan}`,
-                    inline: true
-                },
-                {
-                    name: "🔊 Aikaa äänikanavalla",
-                    value: muotoileAika(aaniYhteensa),
-                    inline: true
-                },
-                {
-                    name: "⚙️ Komentoja käytetty",
-                    value: `${komentojaYhteensa}`,
-                    inline: true
-                },
-                {
-                    name: "⭐ Suosikkikomento",
-                    value: suosikkiKomento ? `/${suosikkiKomento.command} (${suosikkiKomento.count}x)` : "Ei vielä yhtään",
-                    inline: true
-                },
-                {
-                    name: "🏆 Sija viestitilastossa",
-                    value: sijaTieto.sija ? `#${sijaTieto.sija} / ${sijaTieto.jasenmaara}` : "Ei sijoitusta vielä",
-                    inline: true
-                },
-                {
-                    name: "📁 Komitean huomio",
-                    value: roast
-                }
-            )
-            .setFooter({ text: "Kaikki tilastot perustuvat oikeaan palvelinaktiivisuuteen." })
-            .setTimestamp();
-
         if (kaannetty) {
-            embed.setDescription(`${kommentti}\n\n*(Pyysit tietoja käyttäjästä ${pyydetty}, mutta komitea päätti toisin.)*`);
+            embed.setDescription(`${kommentti}\n\n*(Pyysit tietoja käyttäjästä ${mentionUser(pyydetty.id)}, mutta komitea päätti toisin.)*`);
         }
 
         await interaction.editReply({ embeds: [embed] });

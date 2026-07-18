@@ -14,4 +14,20 @@ const BRANDI = {
     FOOTER_ICON: "🖤"
 };
 
-module.exports = { VARIT, BRANDI };
+/**
+ * Piirtää yhtenäisen tyylisen progress barin täysillä/tyhjillä lohkoilla.
+ * Tämä on koko projektin ainoa paikka joka tietää miltä "palkki" näyttää —
+ * `utils/ui/format.js`:n `formatProgressBar` kutsuu tätä sen sijaan että
+ * piirtäisi lohkot itse.
+ *
+ * @param {number} prosentti 0-100
+ * @param {number} pituus lohkojen määrä (oletus 12)
+ * @returns {string} esim. "████████░░░░"
+ */
+function palkki(prosentti, pituus = 12) {
+    const p = Math.max(0, Math.min(100, prosentti));
+    const tayta = Math.round((p / 100) * pituus);
+    return "█".repeat(tayta) + "░".repeat(Math.max(0, pituus - tayta));
+}
+
+module.exports = { VARIT, BRANDI, palkki };
