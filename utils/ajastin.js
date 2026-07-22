@@ -1,6 +1,7 @@
 const { EmbedBuilder } = require("discord.js");
 const { get, all } = require("./db");
 const { tanaan } = require("./tilastot");
+const { eilinenHelsingissa } = require("./time");
 const { RANGAISTUKSET, satunnainen, satunnaisVali } = require("./komiteadata");
 const { haeKaikkiAsetuksetJoillaKanava, merkitseDigestLahetetyksi, kirjaaTuomio } = require("./tutkintadata");
 const { VARIT } = require("./tyyli");
@@ -9,9 +10,7 @@ const TARKISTUSVALI_MS = 10 * 60 * 1000; // 10 min
 const MITALIT = ["🥇", "🥈", "🥉"];
 
 function eilinenPvm() {
-    const d = new Date();
-    d.setUTCDate(d.getUTCDate() - 1);
-    return d.toISOString().slice(0, 10);
+    return eilinenHelsingissa();
 }
 
 async function eilisenParasKirjoittaja(guildId, pvm) {

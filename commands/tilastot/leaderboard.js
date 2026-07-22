@@ -52,7 +52,7 @@ module.exports = {
             embeds: [ranking({
                 title: category.title,
                 description,
-                footer: "Tilastot nollautuvat joka päivä UTC-ajassa keskiyöllä."
+                footer: "Tilastot nollautuvat joka päivä Suomen (Helsingin) ajassa keskiyöllä."
             })]
         });
     }

@@ -32,6 +32,13 @@ const migrations = [
             `CREATE INDEX IF NOT EXISTS idx_guilt_log_guild_user_time ON guilt_log (guildId, userId, timestamp)`,
             `CREATE INDEX IF NOT EXISTS idx_verdicts_guild_user_time ON verdicts_log (guildId, userId, timestamp)`
         ]
+    },
+    {
+        id: 3,
+        name: "custom-commands",
+        statements: [
+            `CREATE TABLE IF NOT EXISTS custom_commands (guildId TEXT NOT NULL, keyword TEXT NOT NULL, response TEXT NOT NULL, createdBy TEXT NOT NULL, timestamp INTEGER NOT NULL, PRIMARY KEY (guildId, keyword))`
+        ]
     }
 ];
 

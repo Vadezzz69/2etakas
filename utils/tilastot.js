@@ -1,7 +1,8 @@
 const { run, get, all } = require("./db");
+const { tanaanHelsingissa, paiviaSittenHelsingissa } = require("./time");
 
 function tanaan() {
-    return new Date().toISOString().slice(0, 10);
+    return tanaanHelsingissa();
 }
 
 // =====================================================
@@ -416,20 +417,14 @@ async function aktiivisinAanikanavassaElavana(guildId) {
 
 function aikavaliAlkupaiva(aikavali) {
 
-    const nyt = new Date();
-
     if (aikavali === "kaikki") return "0000-01-01";
 
     if (aikavali === "viikko") {
-        const d = new Date(nyt);
-        d.setUTCDate(d.getUTCDate() - 7);
-        return d.toISOString().slice(0, 10);
+        return paiviaSittenHelsingissa(7);
     }
 
     if (aikavali === "kuukausi") {
-        const d = new Date(nyt);
-        d.setUTCDate(d.getUTCDate() - 30);
-        return d.toISOString().slice(0, 10);
+        return paiviaSittenHelsingissa(30);
     }
 
     return tanaan();

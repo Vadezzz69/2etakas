@@ -6,7 +6,7 @@ const tila = {
 
 function kello() {
     const nyt = new Date();
-    document.getElementById("clock").textContent = nyt.toLocaleTimeString("fi-FI", { hour12: false });
+    document.getElementById("clock").textContent = nyt.toLocaleTimeString("fi-FI", { hour12: false, timeZone: "Europe/Helsinki" });
 }
 setInterval(kello, 1000);
 kello();

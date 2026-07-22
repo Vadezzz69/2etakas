@@ -1,4 +1,3 @@
-console.log("Sakkotilasto ladattiin");
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const { haeSuurimmatSakot } = require("../../utils/tutkintadata");
 const { VARIT } = require("../../utils/tyyli");
@@ -39,5 +38,3 @@ module.exports = {
 
     }
 };
-
-console.log(module.exports);

@@ -1,0 +1,53 @@
+// Lyhyitä "valvontakameran" lokirivejä. generators/cameraGenerator.js
+// yhdistää nämä satunnaisiin (mutta aikajärjestyksessä eteneviin)
+// kellonaikoihin ja rakentaa niistä aikajanan.
+
+const KAMERATAPAHTUMAT = [
+    "Heräsi.",
+    "Avasi Discordin.",
+    "Avasi Discordin uudelleen.",
+    "Unohti miksi tuli koneelle.",
+    "Katsoi jääkaappiin ilman selvää syytä.",
+    "Tuijotti kattoa 40 sekuntia.",
+    "Avasi selaimen ja sulki sen heti.",
+    "Kirjoitti viestin ja poisti sen ennen lähetystä.",
+    "Tarkisti puhelimen ilman ilmoituksia.",
+    "Käveli keittiöön ja takaisin ilman ruokaa.",
+    "Avasi pelin ja katsoi valikkoa kaksi minuuttia.",
+    "Yritti muistaa mitä oli tekemässä.",
+    "Naurahti jollekin näkymättömälle.",
+    "Tarkisti kellon ja unohti heti mitä se näytti.",
+    "Avasi jääkaapin toistamiseen.",
+    "Etsi kaukosäädintä joka oli koko ajan kädessä.",
+    "Katsoi peiliin ja näytti yllättyneeltä.",
+    "Yritti muistaa salasanan viisi kertaa.",
+    "Avasi kalenterin ja sulki sen muuttamatta mitään.",
+    "Venytteli epäilyttävän dramaattisesti.",
+    "Katsoi puhelinta ja laski sen pois ilman toimintaa.",
+    "Aloitti lauseen ja unohti lopettaa sen.",
+    "Vaihtoi asentoa tuolilla kolmatta kertaa minuutissa.",
+    "Avasi uuden välilehden ilman selvää tarkoitusta.",
+    "Tarkisti oliko ovi lukossa, kolme kertaa.",
+    "Haukotteli epäilyttävän teatraalisesti.",
+    "Kirjoitti jotain muistiin ja hukkasi lapun heti.",
+    "Käveli huoneesta toiseen ilman havaittavaa syytä.",
+    "Katsoi kelloa toista kertaa kymmenen sekunnin sisällä.",
+    "Yritti avata ovea joka oli jo auki.",
+    "Tuijotti ruokaa jääkaapissa tekemättä päätöstä.",
+    "Naurahti omalle ajatukselleen ääneen.",
+    "Etsi laseja jotka olivat päässä.",
+    "Katsoi kalenteria ja näytti hämmentyneeltä.",
+    "Avasi television ja sammutti sen heti.",
+    "Tarkisti postilaatikon toistamiseen samana päivänä.",
+    "Yritti muistaa mihin laittoi avaimet.",
+    "Katsoi ikkunasta ilman selvää syytä.",
+    "Käveli kohti keittiötä, muutti mieltä puolimatkassa.",
+    "Tarkisti akun prosentin puhelimesta neljättä kertaa.",
+    "Avasi jääkaapin, katsoi sisään, sulki sen tyhjin käsin.",
+    "Yritti löytää kuulokkeet jotka olivat kaulassa.",
+    "Katsoi kattoa ja huokaisi syvään.",
+    "Aloitti tehtävän ja lopetti sen kolmen sekunnin päästä.",
+    "Tarkisti Discordin ilmoitukset vaikka niitä ei ollut."
+];
+
+module.exports = { KAMERATAPAHTUMAT };

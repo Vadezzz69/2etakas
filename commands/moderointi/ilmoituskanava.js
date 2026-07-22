@@ -26,7 +26,7 @@ module.exports = {
             .setDescription(
                 `✅ Automaattiset päivätuomiot ja -rankingit postataan nyt kanavaan ${kanava}.\n\n` +
                 `Botti tarkistaa säännöllisin väliajoin onko tämän päivän postaus vielä tekemättä, ` +
-                `ja lähettää sen automaattisesti kun uusi päivä (UTC) alkaa.`
+                `ja lähettää sen automaattisesti kun uusi päivä alkaa (Suomen aika).`
             );
 
         await interaction.reply({ embeds: [embed] });

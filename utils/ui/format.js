@@ -1,4 +1,5 @@
 const { palkki } = require("../tyyli");
+const { HELSINGIN_AIKAVYOHYKE } = require("../time");
 
 /** Shared presentation helpers for Discord UI. */
 
@@ -35,11 +36,11 @@ function formatDuration(seconds, { short = false } = {}) {
     return parts.join(" ");
 }
 
-function formatDate(value, { locale = "fi-FI", dateStyle = "medium" } = {}) {
+function formatDate(value, { locale = "fi-FI", dateStyle = "medium", timeZone = HELSINGIN_AIKAVYOHYKE } = {}) {
     const date = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(date.getTime())) return "—";
 
-    return new Intl.DateTimeFormat(locale, { dateStyle }).format(date);
+    return new Intl.DateTimeFormat(locale, { dateStyle, timeZone }).format(date);
 }
 
 function mentionUser(userId) {

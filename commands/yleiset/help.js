@@ -9,9 +9,44 @@ const KATEGORIA_OTSIKOT = {
     komitea: "😂 Komitea & trollit",
     tutkinta: "📁 Tutkinnat & syyllisyys",
     hauskat: "🤕 Hauskat",
+    fun: "🎭 Komitean ilveilyt",
     pelit: "🎮 Pelit",
     tilastot: "📊 Tilastot"
 };
+
+// Discordin embed-kenttäraja on 1024 merkkiä. Pidetään pieni marginaali
+// (1000) jotta emojit/erikoismerkit eivät koskaan ylitä rajaa vahingossa.
+const KENTAN_MAKSIMIPITUUS = 1000;
+
+/**
+ * Jakaa komentorivit useaan kenttään jos yhteispituus ylittäisi Discordin
+ * rajan. Yhdenkin kategorian komentomäärä voi kasvaa ajan myötä, joten
+ * tämä on parempi ratkaisu kuin kiinteä oletus "yksi kenttä per kategoria".
+ */
+function pilkoKentiksi(otsikko, rivit) {
+
+    const kentat = [];
+    let nykyinenPala = [];
+    let nykyinenPituus = 0;
+
+    for (const rivi of rivit) {
+        if (nykyinenPituus + rivi.length + 1 > KENTAN_MAKSIMIPITUUS && nykyinenPala.length) {
+            kentat.push(nykyinenPala.join("\n"));
+            nykyinenPala = [];
+            nykyinenPituus = 0;
+        }
+        nykyinenPala.push(rivi);
+        nykyinenPituus += rivi.length + 1;
+    }
+
+    if (nykyinenPala.length) kentat.push(nykyinenPala.join("\n"));
+
+    return kentat.map((value, i) => ({
+        name: kentat.length > 1 ? `${otsikko} (${i + 1}/${kentat.length})` : otsikko,
+        value
+    }));
+
+}
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -34,12 +69,12 @@ module.exports = {
             .setFooter({ text: `${BRANDI.FOOTER_ICON} ${BRANDI.FOOTER_TEKSTI}` });
 
         for (const [kategoria, komennot] of ryhmat) {
-            embed.addFields({
-                name: KATEGORIA_OTSIKOT[kategoria] ?? kategoria,
-                value: komennot
-                    .map(cmd => `\`/${cmd.data.name}\` — ${cmd.data.description}`)
-                    .join("\n")
-            });
+
+            const rivit = komennot.map(cmd => `\`/${cmd.data.name}\` — ${cmd.data.description}`);
+            const otsikko = KATEGORIA_OTSIKOT[kategoria] ?? kategoria;
+
+            embed.addFields(...pilkoKentiksi(otsikko, rivit));
+
         }
 
         await interaction.reply({ embeds: [embed] });

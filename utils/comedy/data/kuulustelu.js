@@ -1,0 +1,71 @@
+const KYSYMYKSET = [
+    "Missä olit eilen kello 22?",
+    "Kuka söi viimeisen keksin?",
+    "Miksi jääkaappi oli auki viisi minuuttia?",
+    "Miksi mikrofoni oli mykistetty juuri tärkeimmällä hetkellä?",
+    "Selitä, miksi et vastannut viestiin kuuteen tuntiin.",
+    "Miksi olit äänikanavalla, muttet sanonut mitään?",
+    "Kuka aloitti tämän kaiken?",
+    "Miksi vaikutit niin rauhalliselta kun asiasta kysyttiin?",
+    "Mitä teit kello kolme yöllä?",
+    "Miksi selitys muuttui kolmatta kertaa?",
+    "Kuka antoi sinulle luvan siihen?",
+    "Miksi olit niin varma asiasta josta et tiennyt mitään?",
+    "Miksi et kertonut tästä aiemmin?",
+    "Missä olit kun asia tapahtui?",
+    "Kenen kanssa olit tekemisissä sinä iltana?",
+    "Miksi käytit juuri sitä sanamuotoa?",
+    "Miksi vaihdoit aihetta kesken kysymyksen?",
+    "Mitä yritit peittää sillä hymyllä?",
+    "Miksi katsoit sivuun kun kysyttiin suoraan?",
+    "Kuka muu tiesi tästä?",
+    "Miksi kello ei täsmää tarinaasi?",
+    "Miksi vaikutit yllättyneeltä, vaikka väitit tienneesi kaiken?",
+    "Miten selität todisteet?",
+    "Miksi vastauksesi muuttui heti kun mainittiin todistaja?",
+    "Mitä oikeasti tapahtui sinä iltana?"
+];
+
+const VASTAUKSET = [
+    "En muista.",
+    "En ollut paikalla, mutta jos olisin ollut, en olisi tehnyt sitä.",
+    "Se oli teknisesti toisen vastuulla.",
+    "En halua vastata tähän ilman asianajajaa, jota minulla ei ole.",
+    "Se on monimutkainen tarina.",
+    "En ymmärrä kysymystä, vaikka ymmärrän kysymyksen.",
+    "Se riippuu siitä, mitä tarkoitat sanalla \"tapahtui\".",
+    "En kiistä enkä vahvista.",
+    "Minulla oli täysin looginen syy, jota en muista juuri nyt.",
+    "Se oli osa suurempaa suunnitelmaa.",
+    "En ollut siellä. Olin toisessa huoneessa. Samaan aikaan.",
+    "Kysy joltain muulta.",
+    "En vastaa kysymyksiin jotka on esitetty niin suoraan.",
+    "Se oli vahinko, mutta hyvin harkittu vahinko.",
+    "Todisteet ovat epäluotettavia lähtökohtaisesti.",
+    "Muistan vain osan, ja se osa on minulle edullinen.",
+    "En sano ei, mutta en myöskään sano kyllä.",
+    "Se ei ollut minun ideani, mutta olin samaa mieltä äänekkäästi.",
+    "En muista, mutta olen varma ettei se ollut minun syytäni.",
+    "Kysymys on epäreilu ja johdatteleva.",
+    "Olin siellä, mutten osallistunut, paitsi ehkä hieman.",
+    "En halua sanoa mitään mikä voidaan käyttää minua vastaan, mutta kyllä.",
+    "Se on totta vain osittain, riippuen näkökulmasta."
+];
+
+const JOHTOPAATOKSET = [
+    "Komitea toteaa, ettei asia selvinnyt yhtään, mutta pöytäkirja on nyt pidempi.",
+    "Kuulustelu päättyi ilman tunnustusta, mutta epäilyt vahvistuivat.",
+    "Komitea päätti uskoa osaa tarinasta, ei kaikkea.",
+    "Todisteet ja lausunnot ovat ristiriidassa; komitea valitsee jännittävämmän version.",
+    "Kuulustelu keskeytettiin kahvitauon vuoksi eikä sitä jatkettu.",
+    "Komitea toteaa syyllisyyden todennäköiseksi, muttei todistettavaksi.",
+    "Asia siirretään jatkotutkintaan, koska kukaan ei jaksanut päättää mitään.",
+    "Komitea vaikuttui epäillyn itsevarmuudesta ilman todisteita.",
+    "Kuulustelu päättyi molempien osapuolten unohdettua alkuperäisen kysymyksen.",
+    "Komitea toteaa, että totuus on jossain siellä välissä.",
+    "Vastaukset olivat niin epäselviä että ne tulkitaan automaattisesti syyllisyydeksi.",
+    "Komitea päättää uskoa epäiltyä, koska kuulustelu venyi jo liian pitkäksi.",
+    "Todistusaineisto riittää epäilyyn muttei tuomioon — toistaiseksi."
+];
+
+module.exports = { KYSYMYKSET, VASTAUKSET, JOHTOPAATOKSET };
