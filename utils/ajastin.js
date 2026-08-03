@@ -5,9 +5,9 @@ const { eilinenHelsingissa } = require("./time");
 const { RANGAISTUKSET, satunnainen, satunnaisVali } = require("./komiteadata");
 const { haeKaikkiAsetuksetJoillaKanava, merkitseDigestLahetetyksi, kirjaaTuomio } = require("./tutkintadata");
 const { VARIT } = require("./tyyli");
+const { renderLeaderboard } = require("./ui/format");
 
 const TARKISTUSVALI_MS = 10 * 60 * 1000; // 10 min
-const MITALIT = ["🥇", "🥈", "🥉"];
 
 function eilinenPvm() {
     return eilinenHelsingissa();
@@ -101,9 +101,7 @@ async function postaaDigest(guild, kanava, pvm) {
     if (topViestit.length) {
         embed.addFields({
             name: "💬 Eilisen top-kirjoittajat",
-            value: topViestit
-                .map((r, i) => `${MITALIT[i] ?? `${i + 1}.`} <@${r.userId}> — ${r.count} viestiä`)
-                .join("\n")
+            value: renderLeaderboard(topViestit, r => `${r.count} viestiä`)
         });
     }
 

@@ -1,6 +1,6 @@
-const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require("discord.js");
-const { run, get } = require("../../utils/db");
-const { VARIT } = require("../../utils/tyyli");
+const { SlashCommandBuilder, PermissionFlagsBits } = require("discord.js");
+const { warning } = require("../../utils/ui");
+const { lisaaVaroitus, haeVaroitustenMaara } = require("../../utils/varoitusdata");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -15,31 +15,18 @@ module.exports = {
         .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
 
     async execute(interaction) {
-
         const kayttaja = interaction.options.getUser("kayttaja");
         const syy = interaction.options.getString("syy");
 
-        await run(
-            `INSERT INTO warnings (guildId, userId, reason, moderatorId, timestamp) VALUES (?, ?, ?, ?, ?)`,
-            [interaction.guildId, kayttaja.id, syy, interaction.user.id, Date.now()]
-        );
+        await lisaaVaroitus(interaction.guildId, kayttaja.id, syy, interaction.user.id);
+        const maara = await haeVaroitustenMaara(interaction.guildId, kayttaja.id);
 
-        const row = await get(
-            `SELECT COUNT(*) as count FROM warnings WHERE guildId = ? AND userId = ?`,
-            [interaction.guildId, kayttaja.id]
-        );
-
-        const embed = new EmbedBuilder()
-            .setColor(VARIT.VAROITUS)
-            .setTitle("⚠️ Varoitus annettu")
-            .setDescription(
-                `${kayttaja} sai varoituksen.\n\n` +
-                `**Syy:** ${syy}\n` +
-                `**Varoituksia yhteensä:** ${row?.count ?? 1}`
-            )
-            .setFooter({ text: `Antoi: ${interaction.user.tag}` });
+        const embed = warning({
+            title: "⚠️ Varoitus annettu",
+            description: `${kayttaja} sai varoituksen.\n\n**Syy:** ${syy}\n**Varoituksia yhteensä:** ${maara}`,
+            footer: `Antoi: ${interaction.user.tag}`
+        });
 
         await interaction.reply({ embeds: [embed] });
-
     }
 };

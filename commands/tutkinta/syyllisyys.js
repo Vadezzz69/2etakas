@@ -1,11 +1,7 @@
-const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
+const { SlashCommandBuilder } = require("discord.js");
 const { haeSyyllisyysprosentti, haeSyyllisyysHistoria, haeSyyllisinLista, haeTuomioidenMaara } = require("../../utils/tutkintadata");
+const { ranking, createEmbed, formatProgressBar, renderLeaderboard } = require("../../utils/ui");
 const { VARIT } = require("../../utils/tyyli");
-
-function palkki(prosentti) {
-    const tayta = Math.round(prosentti / 10);
-    return "🟥".repeat(tayta) + "⬜".repeat(10 - tayta);
-}
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -20,26 +16,18 @@ module.exports = {
         const kayttaja = interaction.options.getUser("kayttaja");
 
         if (!kayttaja) {
-
             const lista = await haeSyyllisinLista(interaction.guildId);
 
             if (!lista.length) {
                 return interaction.reply("Kukaan ei ole vielä kerännyt syyllisyyttä. Epäilyttävän puhdas palvelin.");
             }
 
-            const MITALIT = ["🥇", "🥈", "🥉"];
-
-            const embed = new EmbedBuilder()
-                .setColor(VARIT.AKSENTTI)
-                .setTitle("⚖️ Syyllisimmät — koko historia")
-                .setDescription(
-                    lista
-                        .map((r, i) => `${MITALIT[i] ?? `${i + 1}.`} <@${r.userId}> — **${Math.max(0, Math.min(100, r.summa))}%**`)
-                        .join("\n")
-                );
+            const embed = ranking({
+                title: "⚖️ Syyllisimmät — koko historia",
+                description: renderLeaderboard(lista, r => `**${Math.max(0, Math.min(100, r.summa))}%**`)
+            });
 
             return interaction.reply({ embeds: [embed] });
-
         }
 
         const [prosentti, historia, tuomioita] = await Promise.all([
@@ -48,27 +36,26 @@ module.exports = {
             haeTuomioidenMaara(interaction.guildId, kayttaja.id)
         ]);
 
-        const embed = new EmbedBuilder()
-            .setColor(prosentti > 60 ? VARIT.AKSENTTI : prosentti > 30 ? VARIT.HARMAA : VARIT.PERUS)
-            .setTitle(`⚖️ ${kayttaja.username}n syyllisyysprosentti`)
-            .setThumbnail(kayttaja.displayAvatarURL())
-            .addFields(
-                { name: "Syyllisyys", value: `${palkki(prosentti)}  **${prosentti}%**` },
-                { name: "Tuomioita yhteensä", value: `${tuomioita}`, inline: true }
-            );
+        const fields = [
+            { name: "Syyllisyys", value: formatProgressBar(prosentti) },
+            { name: "Tuomioita yhteensä", value: `${tuomioita}`, inline: true }
+        ];
 
         if (historia.length) {
-            embed.addFields({
+            fields.push({
                 name: "Viimeisimmät tapahtumat",
-                value: historia
-                    .map(h => `${h.delta >= 0 ? "🔺" : "🔻"} ${h.delta >= 0 ? "+" : ""}${h.delta} — ${h.syy}`)
-                    .join("\n")
+                value: historia.map(h => `${h.delta >= 0 ? "🔺" : "🔻"} ${h.delta >= 0 ? "+" : ""}${h.delta} — ${h.syy}`).join("\n")
             });
         }
 
-        embed.setFooter({ text: "Syyllisyysprosentti kertyy tutkinnoista, äänestyksistä ja tuomioista — pysyvästi." });
+        const embed = createEmbed({
+            color: prosentti > 60 ? VARIT.AKSENTTI : prosentti > 30 ? VARIT.HARMAA : VARIT.PERUS,
+            title: `⚖️ ${kayttaja.username}n syyllisyysprosentti`,
+            thumbnail: kayttaja.displayAvatarURL(),
+            fields,
+            footer: "Syyllisyysprosentti kertyy tutkinnoista, äänestyksistä ja tuomioista — pysyvästi."
+        });
 
         await interaction.reply({ embeds: [embed] });
-
     }
 };

@@ -483,3 +483,62 @@ anonyymejä todistajatyyppejä — käytössä `/syyte`- ja `/kuulustelu`-komenn
   komentolista ylittäisi Discordin 1024 merkin kenttärajan (ilman tätä
   `/help` olisi kaatunut heti kun `fun`-kategoria lisättiin — 15 komentoa
   yhteensä 1112 merkkiä ylitti rajan)
+
+---
+
+## Päivitys: komentojen yhdistäminen (57 → 31 ylätason komentoa)
+
+Koodikanta analysoitiin kokonaisuudessaan ja päällekkäiset komennot
+yhdistettiin alikomennoiksi. **Yksikään tietokantataulu, migraatio tai
+olemassa oleva data ei muuttunut** — kaikki muutokset ovat pelkästään
+komentokerroksessa. Testattu myös oikealla, olemassa olevalla
+`database.sqlite`-tiedostolla: kaikki 31 komentoa latautuvat ja migraatio
+ajautuu puhtaasti ilman muutoksia dataan.
+
+### Poistui kokonaan
+
+- `/leaderboard` — oli 100 % päällekkäinen `/rankingit kategoria aikavali:Tänään`:n kanssa. Käytä jatkossa `/rankingit`.
+
+### Yhdistetyt komennot
+
+| Uusi komento | Korvaa | Alikomennot |
+|---|---|---|
+| `/sakko` | `/sakko`, `/sakota`, `/sakkotilasto` | `anna`, `feikki`, `top` |
+| `/vakoilu` | `/vakoile`, `/spy`, `/report`, `/wanted`, `/tehtava`, `/koodinimi`, `/salaisuus`, `/itsetuho` | `tarkkaile`, `nopea`, `raportti`, `etsintakuulutus`, `tehtava`, `koodinimi`, `salaisuus`, `itsetuho` |
+| `/komitea` | `/komitea` (paljas), `/tuomio`, `/sus`, `/onko`, `/syyllinen`, `/spinner` | `paatos`, `tuomio`, `sus`, `onko`, `syyllinen`, `spinner` |
+| `/tutkimus` | `/ratsia`, `/takavarikko`, `/kuulustelu`, `/rikosrekisteri`, `/kamerat`, `/psykoanalyysi` | `ratsia`, `takavarikko`, `kuulustelu`, `rikosrekisteri`, `kamerat`, `psykoanalyysi` |
+| `/oikeus` | `/syyte`, `/todiste`, `/lasku` | `syyte`, `todiste`, `lasku` |
+| `/paiva` | `/paivanrikos`, `/paivanpaatos`, `/tekosyy`, `/tiedote`, `/vuodenrikollinen` | `rikos`, `paatos`, `tekosyy`, `tiedote`, `vuodenrikollinen` |
+
+**Huom:** `/komitea` tarkoittaa nyt aina alikomentoa — pelkkä `/komitea`
+ilman alikomentoa ei enää toimi, käytä `/komitea paatos` vastaavaan
+lopputulokseen kuin ennen.
+
+**Koskemattomat komennot** (eivät osa mitään klusteria):
+`/aikalisa`, `/bannaa`, `/potkaise` (feikkimoderointi — sisäisesti
+siistitty jaettuun `utils/feikkitoiminto.js`:ään, mutta pysyvät omina
+komentoinaan), `/tyhjenna`, `/avaa`, `/lukitse`, `/varoita`,
+`/varoitukset`, `/tutkinta`, `/epaily`, `/aanestys`, `/help`, `/ping`,
+`/palvelininfo`, `/kayttajainfo`, `/loukkaa`, `/vammatilastot`, `/roast`,
+`/aktiivisuus`, `/meemi`, `/kolikko`, `/ilmoituskanava`, `/debugvoice`,
+`/lisaa` (mukautetut `!`-komennot pysyvät ennallaan viestikäsittelijässä).
+
+### Sisäinen siivous (ei näy komentojen käyttäjille)
+
+- **Kolminkertainen datankeruu korjattu** `/roast`:issa, `/aktiivisuus`:ssa
+  ja `/vakoilu raportti`:ssa — nämä kutsuivat aiemmin `analyzeUserStats` +
+  `collectUserStats` + `generateRoast`/`analyzeRoast` erikseen, vaikka
+  `analyzeUserStats`:n palauttama `roastContext` sisältää jo kaiken
+  tarvittavan datan. Jokainen näistä komennoista tekee nyt yhden
+  SQL-kyselysarjan kolmen sijaan.
+- **`utils/async.js`** — jaettu `odota(ms)`, korvasi neljä identtistä kopiota.
+- **`utils/feikkitoiminto.js`** — jaettu runko feikeille
+  moderointitoiminnoille (`/komitea aikalisa|bannaa|potkaise`).
+- **`utils/varoitusdata.js`** (uusi) ja **`utils/vammadata.js`** (laajennettu)
+  — `warnings`- ja `injuries`-taulujen SQL siirrettiin pois
+  komentotiedostoista, samaan tapaan kuin `utils/tutkintadata.js` jo teki
+  muille tauluille.
+- **`renderLeaderboard`** lisätty `utils/ui/format.js`:ään — korvasi kuusi
+  itsenäistä kopiota mitalilistan (🥇🥈🥉) renderöinnistä.
+- Koko analyysi ja yksityiskohtainen perustelu jokaiselle muutokselle on
+  saatavilla erillisenä raporttina pyydettäessä.

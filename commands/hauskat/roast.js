@@ -1,7 +1,7 @@
 const { SlashCommandBuilder } = require("discord.js");
 const { report, formatDuration } = require("../../utils/ui");
-const { analyzeUserStats, collectUserStats } = require("../../utils/statsEngine");
-const { analyzeRoast } = require("../../utils/roastEngine");
+const { analyzeUserStats } = require("../../utils/statsEngine");
+const { analyzeRoastFromStats } = require("../../utils/roastEngine");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -15,11 +15,10 @@ module.exports = {
         await interaction.deferReply();
 
         const user = interaction.options.getUser("kayttaja");
-        const [analysis, stats, roast] = await Promise.all([
-            analyzeUserStats(interaction.guildId, user.id),
-            collectUserStats(interaction.guildId, user.id),
-            analyzeRoast(interaction.guildId, user.id)
-        ]);
+
+        const analysis = await analyzeUserStats(interaction.guildId, user.id);
+        const stats = analysis.roastContext;
+        const roast = analyzeRoastFromStats(analysis.roastContext);
 
         const embed = report({
             title: `🔥 Komitean huomio — ${user.username}`,

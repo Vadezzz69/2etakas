@@ -1,6 +1,6 @@
-const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require("discord.js");
-const { all } = require("../../utils/db");
-const { VARIT } = require("../../utils/tyyli");
+const { SlashCommandBuilder, PermissionFlagsBits } = require("discord.js");
+const { warning } = require("../../utils/ui");
+const { haeVaroitukset } = require("../../utils/varoitusdata");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -12,32 +12,19 @@ module.exports = {
         .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
 
     async execute(interaction) {
-
         const kayttaja = interaction.options.getUser("kayttaja");
-
-        const rivit = await all(
-            `SELECT reason, moderatorId, timestamp FROM warnings WHERE guildId = ? AND userId = ? ORDER BY timestamp DESC LIMIT 10`,
-            [interaction.guildId, kayttaja.id]
-        );
+        const rivit = await haeVaroitukset(interaction.guildId, kayttaja.id, 10);
 
         if (!rivit.length) {
             return interaction.reply(`${kayttaja.username} ei ole saanut yhtään varoitusta. Puhdas pöytä. ✅`);
         }
 
-        const embed = new EmbedBuilder()
-            .setColor(VARIT.VAROITUS)
-            .setTitle(`⚠️ ${kayttaja.username}n varoitukset (${rivit.length} viimeisintä)`)
-            .setThumbnail(kayttaja.displayAvatarURL())
-            .setDescription(
-                rivit
-                    .map((r, i) =>
-                        `**${i + 1}.** ${r.reason}\n` +
-                        `↳ <@${r.moderatorId}> — <t:${Math.floor(r.timestamp / 1000)}:R>`
-                    )
-                    .join("\n\n")
-            );
+        const embed = warning({
+            title: `⚠️ ${kayttaja.username}n varoitukset (${rivit.length} viimeisintä)`,
+            thumbnail: kayttaja.displayAvatarURL(),
+            description: rivit.map((r, i) => `**${i + 1}.** ${r.reason}\n↳ <@${r.moderatorId}> — <t:${Math.floor(r.timestamp / 1000)}:R>`).join("\n\n")
+        });
 
         await interaction.reply({ embeds: [embed] });
-
     }
 };

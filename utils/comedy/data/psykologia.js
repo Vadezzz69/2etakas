@@ -9,7 +9,7 @@ const PIIRTEET = [
     "Herkkyys meemeille", "Yöaktiivisuus", "Kyky lopettaa pelaaminen ajoissa",
     "Taipumus unohtaa asioita kesken lauseen", "Itsevarmuus ilman perusteita",
     "Kyky valita ravintola nopeasti", "Taipumus avata jääkaappi turhaan",
-    "Herkkyys ärsyyntyä latausruuduista", "Kyky pysyä hiljaa salen jonossa",
+    "Herkkyys ärsyyntyä latausruuduista", "Kyky pysyä hiljaa kokouksessa",
     "Taipumus lupautua liikaa", "Kyky tunnistaa oma väsymys ajoissa",
     "Reagointinopeus ilmoituksiin", "Taipumus ostaa alesta jotain tarpeetonta",
     "Kyky säilyttää rauhallisuus latauksen aikana", "Herkkyys spoilereille"
@@ -53,8 +53,7 @@ const RISKILUOKAT = [
     "Korkea riski väittää olevansa \"ihan kohta valmis\".",
     "Kohonnut riski energiajuoman ylikulutukseen.",
     "Matala riski, mutta korkea meemipotentiaali.",
-    "Keskimääräistä epäluotettavampi kalenterin suhteen.",
-    "Korkean kortisolitason."
+    "Keskimääräistä epäluotettavampi kalenterin suhteen."
 ];
 
 module.exports = { PIIRTEET, DIAGNOOSIT, RISKILUOKAT };

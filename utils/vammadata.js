@@ -1,3 +1,5 @@
+const { run, get, all } = require("./db");
+
 const HAUSKAT_KOMMENTIT = [
     "Ai että osaa olla kömpelö! 🤕",
     "Ehkä kannattaisi harkita kypärää seuraavalla kerralla.",
@@ -29,4 +31,46 @@ function satunnainenKommentti() {
     return HAUSKAT_KOMMENTIT[Math.floor(Math.random() * HAUSKAT_KOMMENTIT.length)];
 }
 
-module.exports = { arvonimi, satunnainenKommentti };
+// =====================================================
+// TIETOKANTA — siirretty tänne komentotiedostoista
+// (loukkaa.js, vammatilastot.js), sama malli kuin utils/tutkintadata.js.
+// injuries-taulun rakenteeseen ei kosketa.
+// =====================================================
+
+async function lisaaLoukkaantuminen(guildId, userId, syy, ilmoittaja) {
+    await run(
+        `INSERT INTO injuries (guildId, userId, reason, reportedBy, timestamp) VALUES (?, ?, ?, ?, ?)`,
+        [guildId, userId, syy, ilmoittaja, Date.now()]
+    );
+}
+
+async function haeLoukkaantumistenMaara(guildId, userId) {
+    const row = await get(
+        `SELECT COUNT(*) as count FROM injuries WHERE guildId = ? AND userId = ?`,
+        [guildId, userId]
+    );
+    return row?.count ?? 0;
+}
+
+async function haeViimeisimmatLoukkaantumiset(guildId, userId, limit = 5) {
+    return all(
+        `SELECT reason, timestamp FROM injuries WHERE guildId = ? AND userId = ? ORDER BY timestamp DESC LIMIT ?`,
+        [guildId, userId, limit]
+    );
+}
+
+async function haeLoukkaantumisLista(guildId, limit = 10) {
+    return all(
+        `SELECT userId, COUNT(*) as count FROM injuries WHERE guildId = ? GROUP BY userId ORDER BY count DESC LIMIT ?`,
+        [guildId, limit]
+    );
+}
+
+module.exports = {
+    arvonimi,
+    satunnainenKommentti,
+    lisaaLoukkaantuminen,
+    haeLoukkaantumistenMaara,
+    haeViimeisimmatLoukkaantumiset,
+    haeLoukkaantumisLista
+};

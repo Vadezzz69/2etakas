@@ -1,28 +1,24 @@
-const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
-const { run, get } = require("../../utils/db");
-const { arvonimi, satunnainenKommentti } = require("../../utils/vammadata");
-const { VARIT } = require("../../utils/tyyli");
+const { SlashCommandBuilder } = require("discord.js");
+const { report } = require("../../utils/ui");
+const {
+    arvonimi,
+    satunnainenKommentti,
+    lisaaLoukkaantuminen,
+    haeLoukkaantumistenMaara
+} = require("../../utils/vammadata");
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName("loukkaa")
         .setDescription("Kirjaa käyttäjän loukkaantumisen tilastoihin.")
         .addUserOption(option =>
-            option
-                .setName("kayttaja")
-                .setDescription("Kuka loukkaantui")
-                .setRequired(true)
+            option.setName("kayttaja").setDescription("Kuka loukkaantui").setRequired(true)
         )
         .addStringOption(option =>
-            option
-                .setName("syy")
-                .setDescription("Miten loukkaantuminen tapahtui")
-                .setRequired(true)
-                .setMaxLength(200)
+            option.setName("syy").setDescription("Miten loukkaantuminen tapahtui").setRequired(true).setMaxLength(200)
         ),
 
     async execute(interaction) {
-
         const user = interaction.options.getUser("kayttaja");
         const reason = interaction.options.getString("syy");
 
@@ -30,31 +26,20 @@ module.exports = {
             return interaction.reply({ content: "Botit eivät voi loukkaantua. Vielä. 🤖", ephemeral: true });
         }
 
-        await run(
-            `INSERT INTO injuries (guildId, userId, reason, reportedBy, timestamp) VALUES (?, ?, ?, ?, ?)`,
-            [interaction.guildId, user.id, reason, interaction.user.id, Date.now()]
-        );
+        await lisaaLoukkaantuminen(interaction.guildId, user.id, reason, interaction.user.id);
+        const count = await haeLoukkaantumistenMaara(interaction.guildId, user.id);
 
-        const row = await get(
-            `SELECT COUNT(*) as count FROM injuries WHERE guildId = ? AND userId = ?`,
-            [interaction.guildId, user.id]
-        );
-
-        const count = row?.count ?? 1;
-
-        const embed = new EmbedBuilder()
-            .setColor(VARIT.AKSENTTI)
-            .setTitle("🤕 Loukkaantumisraportti")
-            .setThumbnail(user.displayAvatarURL())
-            .setDescription(`${user} loukkaantui!\n**Syy:** ${reason}`)
-            .addFields(
+        const embed = report({
+            title: "🤕 Loukkaantumisraportti",
+            thumbnail: user.displayAvatarURL(),
+            description: `${user} loukkaantui!\n**Syy:** ${reason}`,
+            fields: [
                 { name: "Loukkaantumisia yhteensä", value: `${count}`, inline: true },
                 { name: "Arvonimi", value: arvonimi(count), inline: true }
-            )
-            .setFooter({ text: satunnainenKommentti() })
-            .setTimestamp();
+            ],
+            footer: satunnainenKommentti()
+        });
 
         await interaction.reply({ embeds: [embed] });
-
     }
 };

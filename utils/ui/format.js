@@ -63,6 +63,19 @@ function formatRanking(rank, fallback = "Ei sijoitusta vielä") {
     return `#${rank.position} / ${rank.total}`;
 }
 
+const OLETUSMITALIT = ["🥇", "🥈", "🥉"];
+
+/**
+ * Renderöi ennätyslistan riveiksi mitaleilla + fallback-numeroinnilla.
+ * Korvaa saman kuvion joka oli aiemmin kirjoitettu itsenäisesti kuudessa
+ * eri komennossa.
+ */
+function renderLeaderboard(rivit, muotoileRivi, mitalit = OLETUSMITALIT) {
+    return rivit
+        .map((rivi, i) => `${mitalit[i] ?? `${i + 1}.`} <@${rivi.userId}> — ${muotoileRivi(rivi, i)}`)
+        .join("\n");
+}
+
 module.exports = {
     formatNumber,
     formatPercent,
@@ -70,5 +83,6 @@ module.exports = {
     formatDate,
     mentionUser,
     formatProgressBar,
-    formatRanking
+    formatRanking,
+    renderLeaderboard
 };

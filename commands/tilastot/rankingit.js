@@ -1,8 +1,6 @@
-const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
+const { SlashCommandBuilder } = require("discord.js");
 const { viestiListaAikavalilla, aaniListaAikavalilla, komentoListaAikavalilla } = require("../../utils/tilastot");
-const { VARIT } = require("../../utils/tyyli");
-
-const MITALIT = ["🥇", "🥈", "🥉"];
+const { ranking, renderLeaderboard } = require("../../utils/ui");
 
 const AIKAVALI_NIMET = {
     tanaan: "Tänään",
@@ -16,10 +14,7 @@ module.exports = {
         .setName("rankingit")
         .setDescription("Pitkäaikainen ennätyslista — valittavalla aikavälillä.")
         .addStringOption(option =>
-            option
-                .setName("kategoria")
-                .setDescription("Minkä perusteella listataan")
-                .setRequired(true)
+            option.setName("kategoria").setDescription("Minkä perusteella listataan").setRequired(true)
                 .addChoices(
                     { name: "Viestit", value: "viestit" },
                     { name: "Äänikanava", value: "aani" },
@@ -27,10 +22,7 @@ module.exports = {
                 )
         )
         .addStringOption(option =>
-            option
-                .setName("aikavali")
-                .setDescription("Miltä aikaväliltä (oletus: koko historia)")
-                .setRequired(false)
+            option.setName("aikavali").setDescription("Miltä aikaväliltä (oletus: koko historia)").setRequired(false)
                 .addChoices(
                     { name: "Tänään", value: "tanaan" },
                     { name: "Viimeiset 7 päivää", value: "viikko" },
@@ -40,7 +32,6 @@ module.exports = {
         ),
 
     async execute(interaction) {
-
         const kategoria = interaction.options.getString("kategoria");
         const aikavali = interaction.options.getString("aikavali") ?? "kaikki";
 
@@ -66,17 +57,12 @@ module.exports = {
             return interaction.reply("Tälle aikavälille ja kategorialle ei löytynyt yhtään dataa.");
         }
 
-        const embed = new EmbedBuilder()
-            .setColor(VARIT.PERUS)
-            .setTitle(`${otsikkoEmoji} Rankingit — ${AIKAVALI_NIMET[aikavali]}`)
-            .setDescription(
-                rivit
-                    .map((r, i) => `${MITALIT[i] ?? `${i + 1}.`} <@${r.userId}> — ${muotoile(r)}`)
-                    .join("\n")
-            )
-            .setFooter({ text: "Data perustuu koko tallennettuun historiaan, ei vain muistiin." });
+        const embed = ranking({
+            title: `${otsikkoEmoji} Rankingit — ${AIKAVALI_NIMET[aikavali]}`,
+            description: renderLeaderboard(rivit, muotoile),
+            footer: "Data perustuu koko tallennettuun historiaan, ei vain muistiin."
+        });
 
         await interaction.reply({ embeds: [embed] });
-
     }
 };

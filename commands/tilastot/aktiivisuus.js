@@ -1,7 +1,7 @@
 const { SlashCommandBuilder } = require("discord.js");
 const { stats, formatDuration } = require("../../utils/ui");
-const { analyzeUserStats, collectUserStats } = require("../../utils/statsEngine");
-const { generateRoast } = require("../../utils/roastEngine");
+const { analyzeUserStats } = require("../../utils/statsEngine");
+const { analyzeRoastFromStats } = require("../../utils/roastEngine");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -13,11 +13,10 @@ module.exports = {
 
     async execute(interaction) {
         const user = interaction.options.getUser("kayttaja") ?? interaction.user;
-        const [analysis, userStats, roast] = await Promise.all([
-            analyzeUserStats(interaction.guildId, user.id),
-            collectUserStats(interaction.guildId, user.id),
-            generateRoast(interaction.guildId, user.id)
-        ]);
+
+        const analysis = await analyzeUserStats(interaction.guildId, user.id);
+        const userStats = analysis.roastContext;
+        const roast = analyzeRoastFromStats(analysis.roastContext);
 
         const embed = stats({
             title: `📊 ${user.username}n aktiivisuus tänään`,
@@ -27,7 +26,7 @@ module.exports = {
                 { name: "Viestejä", value: `${userStats.messages.today}`, inline: true },
                 { name: "Äänikanavalla", value: formatDuration(userStats.voice.todaySeconds), inline: true },
                 { name: "Komentoja", value: `${userStats.commandUsage}`, inline: true },
-                { name: "Komitean huomio", value: roast },
+                { name: "Komitean huomio", value: roast.text },
                 { name: "Merkinnät", value: analysis.badges.join(" • ") || "Ei erityisiä merkintöjä" }
             ]
         });

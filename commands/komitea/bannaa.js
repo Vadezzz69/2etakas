@@ -1,9 +1,5 @@
-const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
-const { VARIT } = require("../../utils/tyyli");
-
-function odota(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
+const { SlashCommandBuilder } = require("discord.js");
+const { suoritaFeikkiToiminto } = require("../../utils/feikkitoiminto");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -17,21 +13,13 @@ module.exports = {
         ),
 
     async execute(interaction) {
-
         const user = interaction.options.getUser("kayttaja");
         const reason = interaction.options.getString("syy") ?? "Syytä ei annettu";
 
-        const embed = new EmbedBuilder()
-            .setColor(VARIT.AKSENTTI)
-            .setDescription(`🔨 **${user.tag}** bannattiin palvelimelta ikuisiksi ajoiksi.\n**Syy:** ${reason}`);
-
-        await interaction.reply({ embeds: [embed] });
-
-        await odota(3000);
-
-        await interaction.followUp(
-            `😂 Ei se mitään, tämä oli täysin kuvitteellinen banni. ${user} saa jäädä.`
-        );
-
+        await suoritaFeikkiToiminto(interaction, {
+            kuvaus: `🔨 **${user.tag}** bannattiin palvelimelta ikuisiksi ajoiksi.\n**Syy:** ${reason}`,
+            paljastus: `😂 Ei se mitään, tämä oli täysin kuvitteellinen banni. ${user} saa jäädä.`,
+            viiveMs: 3000
+        });
     }
 };
