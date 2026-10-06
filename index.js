@@ -30,12 +30,15 @@ commandHandler(client);
 // Ladataan eventit
 eventHandler(client);
 
+// Käynnistetään dashboard heti, jotta Render näkee HTTP-portin
+// myös silloin, jos Discord-kirjautuminen kestää tai epäonnistuu.
+kaynnistaDashboard(client, process.env.DASHBOARD_PORT || process.env.PORT || 10000);
+
 // Kirjaudutaan Discordiin
 client.login(process.env.TOKEN)
     .then(() => {
         console.log("✅ Kirjautuminen onnistui.");
         kaynnistaAjastin(client);
-        kaynnistaDashboard(client, process.env.DASHBOARD_PORT || 3000);
     })
     .catch(err => {
         console.error("❌ Kirjautuminen epäonnistui:");
