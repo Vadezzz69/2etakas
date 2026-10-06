@@ -1,23 +1,74 @@
-const path = require("path");
-const sqlite3 = require("sqlite3").verbose();
-const { createQueryHelpers } = require("./database/helpers");
-const { applyMigrations } = require("./database/migrations");
+const API_URL = (process.env.D1_API_URL || "").replace(/\/+$/, "");
+const API_KEY = process.env.D1_API_KEY || "";
 
-const db = new sqlite3.Database(path.join(process.cwd(), "database.sqlite"), error => {
-    if (error) {
-        console.error("❌ Tietokannan avaus epäonnistui:", error);
-    } else {
-        console.log("✅ SQLite-tietokanta yhdistetty.");
+async function d1Request(path, body) {
+    if (!API_URL || !API_KEY) {
+        throw new Error("D1_API_URL tai D1_API_KEY puuttuu.");
     }
-});
 
-// Migrations use only CREATE/INDEX statements and INSERT OR IGNORE metadata;
-// they never drop, rename, or rewrite existing tables or rows.
-const ready = applyMigrations(db).catch(error => {
-    console.error("❌ Tietokantamigraatio epäonnistui:", error);
-    throw error;
-});
+    const response = await fetch(`${API_URL}${path}`, {
+        method: "POST",
+        headers: {
+            "content-type": "application/json",
+            "authorization": `Bearer ${API_KEY}`
+        },
+        body: JSON.stringify(body)
+    });
 
-const { run, get, all } = createQueryHelpers(db);
+    const text = await response.text();
 
-module.exports = { db, ready, run, get, all };
+    let data;
+
+    try {
+        data = JSON.parse(text);
+    } catch {
+        throw new Error(
+            `D1 API palautti virheellisen vastauksen (HTTP ${response.status}).`
+        );
+    }
+
+    if (!response.ok || data?.error) {
+        throw new Error(
+            data?.error || `D1 API HTTP ${response.status}`
+        );
+    }
+
+    return data;
+}
+
+async function run(sql, params = []) {
+    const result = await d1Request("/api/run", {
+        query: sql,
+        params
+    });
+
+    return {
+        lastID: result?.meta?.last_row_id ?? 0,
+        changes: result?.meta?.changes ?? 0
+    };
+}
+
+async function get(sql, params = []) {
+    const result = await d1Request("/api/all", {
+        query: sql,
+        params
+    });
+
+    return result?.results?.[0];
+}
+
+async function all(sql, params = []) {
+    const result = await d1Request("/api/all", {
+        query: sql,
+        params
+    });
+
+    return result?.results ?? [];
+}
+
+module.exports = {
+    run,
+    get,
+    all,
+    ready: Promise.resolve()
+};
