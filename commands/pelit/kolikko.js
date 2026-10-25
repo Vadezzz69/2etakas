@@ -1,5 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const { VARIT } = require("../../utils/tyyli");
+const { satunnainen, todennakoisyys } = require("../../utils/satunnainen");
+const { tayta, KOLIKKO_TULOKSET, KOLIKKO_OIKEIN, KOLIKKO_VAARIN } = require("../../utils/comedy/data/viestit");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -19,13 +21,13 @@ module.exports = {
     async execute(interaction) {
 
         const veto = interaction.options.getString("veto");
-        const tulos = Math.random() < 0.5 ? "kruuna" : "klaava";
+        const tulos = todennakoisyys(0.5) ? "kruuna" : "klaava";
         const emoji = tulos === "kruuna" ? "🟡" : "⚪";
 
-        let kuvaus = `${emoji} Kolikko näyttää: **${tulos}**!`;
+        let kuvaus = `${emoji} ${tayta(satunnainen(KOLIKKO_TULOKSET), { tulos })}`;
 
         if (veto) {
-            kuvaus += veto === tulos ? "\n\n🎉 Veikkasit oikein!" : "\n\n😅 Väärä veikkaus, yritä uudelleen!";
+            kuvaus += "\n\n" + satunnainen(veto === tulos ? KOLIKKO_OIKEIN : KOLIKKO_VAARIN);
         }
 
         const embed = new EmbedBuilder()

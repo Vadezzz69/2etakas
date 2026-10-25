@@ -1,4 +1,5 @@
-const { satunnainen, ITSE_KAANNOS_KOMMENTIT } = require("./roastdata");
+const { satunnainen, todennakoisyys: heitaNoppaa } = require("./satunnainen");
+const { ITSE_KAANNOS_KOMMENTIT } = require("./roastdata");
 
 /**
  * Päättää, käännetäänkö vakoilun kohde takaisin komennon käyttäjään itseensä.
@@ -19,7 +20,7 @@ function ehkaKaannaKutsujaksi(interaction, alkuperainenKohde, todennakoisyys = 0
         return { kohde: alkuperainenKohde, kaannetty: false, kommentti: null };
     }
 
-    if (Math.random() < todennakoisyys) {
+    if (heitaNoppaa(todennakoisyys)) {
         return {
             kohde: interaction.user,
             kaannetty: true,

@@ -8,7 +8,29 @@ const NIMETYT_TODISTAJAT = [
     "Maire",
     "Shellin juorukerho",
     "Booboo",
-    "Mummot"
+    "Mummot",
+    "Naapurin Wi-Fi-reititin (ei halua kommentoida)",
+    "henkilön oma viimeinen aivosolu",
+    "paikalla ollut pölyhiukkanen",
+    "latauspalkki, joka todisti kaiken",
+    "komitean epävirallinen peruna",
+    "henkilö, joka sanoi \"mä näin kaiken\" mutta katsoi toiseen suuntaan",
+    "tyhjä energiajuomatölkki",
+    "Discordin ilmoitusääni",
+    "tuoli, joka narisi ratkaisevalla hetkellä",
+    "anonyymi käyttäjä nimeltä \"en minä\"",
+    "komitean tauolla nukkunut vahtimestari",
+    "kahvinkeittimen vanha suodatinpussi",
+    "epäilyttävä varjo huoneen nurkassa",
+    "peili, joka ei ole vielä kommentoinut",
+    "kuuluisa \"joku muu\"",
+    "naapurin kana, joka näki kaiken ja kuuli vielä enemmän",
+    "mikrofoni, josta kuuluu vain hengitystä",
+    "komitean oma muisti (epäluotettava)",
+    "Mummot-ryhmän varajäsen",
+    "hiljainen ikkunalauta",
+    "se yksi kaveri, jonka nimeä kukaan ei muista",
+    "Shellin juorukerhon uusi vierailija",
 ];
 
 const YLEISET_TODISTAJAT = [
@@ -55,7 +77,19 @@ const TODISTAJAKOMMENTIT = [
     "kieltäytyi allekirjoittamasta lausuntoa, mutta seisoi sen takana suullisesti.",
     "kertoi kuulleensa asiasta \"luotettavalta taholta\".",
     "vahvisti tapahtuma-ajan, muttei paikkaa.",
-    "totesi nähneensä \"jotain vastaavaa\" aiemminkin."
+    "totesi nähneensä \"jotain vastaavaa\" aiemminkin.",
+    "kertoi nähneensä kaiken, mutta vain kulmasta jossa ei näkynyt mitään.",
+    "kuvaili tapahtumia kolmessa eri aikamuodossa.",
+    "kohotti kulmakarvaa merkitsevästi ja poistui.",
+    "vaati korvausta todistamisesta ja sai kahvikupin.",
+    "sanoi \"en halua sekaantua\" ja sekaantui heti.",
+    "pyysi anonyymiyttä ja kertoi sen jälkeen kaikille nimensä.",
+    "ei muistanut yksityiskohtia, mutta muisti tunnelman, ja se oli paha.",
+    "todisti vilpittömästi ja täysin väärin.",
+    "puhui koko ajan yleisesti mutta tarkoitti selvästi sinua.",
+    "esitti lausuntonsa runomuodossa. Runo oli syyttävä.",
+    "vakuutti, ettei kukaan kuunnellut. Kaikki kuuntelivat.",
+    "tunnisti epäillyn äänestä, vaikka epäilty oli hiljaa.",
 ];
 
 module.exports = { TODISTAJAT, NIMETYT_TODISTAJAT, YLEISET_TODISTAJAT, TODISTAJAKOMMENTIT };

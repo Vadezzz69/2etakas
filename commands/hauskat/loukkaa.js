@@ -6,6 +6,8 @@ const {
     lisaaLoukkaantuminen,
     haeLoukkaantumistenMaara
 } = require("../../utils/vammadata");
+const { satunnainen } = require("../../utils/satunnainen");
+const { BOTTI_LOUKKAA } = require("../../utils/comedy/data/viestit");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -23,7 +25,7 @@ module.exports = {
         const reason = interaction.options.getString("syy");
 
         if (user.bot) {
-            return interaction.reply({ content: "Botit eivät voi loukkaantua. Vielä. 🤖", ephemeral: true });
+            return interaction.reply({ content: satunnainen(BOTTI_LOUKKAA), ephemeral: true });
         }
 
         await lisaaLoukkaantuminen(interaction.guildId, user.id, reason, interaction.user.id);

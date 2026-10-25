@@ -1,6 +1,8 @@
 const { SlashCommandBuilder } = require("discord.js");
 const { report } = require("../../utils/ui");
 const { generoiKuulustelu } = require("../../utils/comedy");
+const { satunnainen } = require("../../utils/satunnainen");
+const { KUULUSTELU_ALATUNNISTEET } = require("../../utils/comedy/data/viestit");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -25,7 +27,8 @@ module.exports = {
         const embed = report({
             title: `🎙️ KUULUSTELUPÖYTÄKIRJA — ${kohde.username}`,
             thumbnail: kohde.displayAvatarURL(),
-            fields
+            fields,
+            footer: satunnainen(KUULUSTELU_ALATUNNISTEET)
         });
 
         await interaction.reply({ embeds: [embed] });

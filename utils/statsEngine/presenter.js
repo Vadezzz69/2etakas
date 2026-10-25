@@ -1,4 +1,4 @@
-const { formatDuration, formatNumber } = require("../ui");
+const { formatDuration, formatNumber, formatLevel } = require("../ui");
 const { buildObservations } = require("./observations");
 const { buildHighlights } = require("./highlights");
 const { getCommitteeOpinion } = require("./opinion");
@@ -35,7 +35,7 @@ function buildSummary(stats, activityLevel, risk) {
         `${formatNumber(stats.investigations.open)} avointa asiaa`
     ].join(", ");
 
-    return `Tänään: ${today}. Kirjauksissa: ${records}. Aktiivisuustaso on ${activityLevel} ja riskitaso ${risk}.`;
+    return `Tänään: ${today}. Kirjauksissa: ${records}. Aktiivisuustaso on ${formatLevel(activityLevel)} ja riskitaso ${formatLevel(risk)}.`;
 }
 
 /**

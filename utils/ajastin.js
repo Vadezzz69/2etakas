@@ -1,13 +1,27 @@
 const { EmbedBuilder } = require("discord.js");
 const { get, all } = require("./db");
 const { tanaan } = require("./tilastot");
-const { eilinenHelsingissa } = require("./time");
-const { RANGAISTUKSET, satunnainen, satunnaisVali } = require("./komiteadata");
+const { eilinenHelsingissa, paivanAlkuMs, paivanLoppuMs } = require("./time");
+const { RANGAISTUKSET } = require("./komiteadata");
+const { satunnainen, satunnaisVali } = require("./satunnainen");
 const { haeKaikkiAsetuksetJoillaKanava, merkitseDigestLahetetyksi, kirjaaTuomio } = require("./tutkintadata");
 const { VARIT } = require("./tyyli");
 const { renderLeaderboard } = require("./ui/format");
+const {
+    tayta,
+    DIGEST_OTSIKOT,
+    DIGEST_KUVAUKSET,
+    DIGEST_EI_TUOMIOTA,
+    DIGEST_FOOTERIT,
+    DIGEST_PAATOS_KEHYKSET,
+    DIGEST_TOP_OTSIKOT,
+    DIGEST_TOP_KOMMENTIT
+} = require("./comedy/data/viestit");
 
 const TARKISTUSVALI_MS = 10 * 60 * 1000; // 10 min
+
+let tarkistusKaynnissa = false;
+let ajastinKaynnistetty = false;
 
 function eilinenPvm() {
     return eilinenHelsingissa();
@@ -28,8 +42,9 @@ async function eilisenParasAanessa(guildId, pvm) {
 }
 
 async function eilisenParasKomentaja(guildId, pvm) {
-    const alku = new Date(`${pvm}T00:00:00.000Z`).getTime();
-    const loppu = alku + 24 * 60 * 60 * 1000;
+    // Päivän rajat Helsingin keskiyöstä keskiyöhön (ei UTC-keskiyöstä).
+    const alku = paivanAlkuMs(pvm);
+    const loppu = paivanLoppuMs(pvm);
     return get(
         `SELECT userId, COUNT(*) as count FROM command_usage
          WHERE guildId = ? AND timestamp >= ? AND timestamp < ?
@@ -84,74 +99,94 @@ async function postaaDigest(guild, kanava, pvm) {
 
     const embed = new EmbedBuilder()
         .setColor(VARIT.AKSENTTI)
-        .setTitle("🕵️ Komitean päivittäinen tiedote")
-        .setDescription(`Yhteenveto eiliseltä päivältä (${pvm}).`)
+        .setTitle(satunnainen(DIGEST_OTSIKOT))
+        .setDescription(tayta(satunnainen(DIGEST_KUVAUKSET), { pvm }))
         .setTimestamp();
 
     if (tuomio) {
         embed.addFields({
-            name: `⚖️ Automaattinen päätös #${tuomio.paatosnumero}`,
+            name: `⚖️ ${satunnainen(DIGEST_PAATOS_KEHYKSET)} #${tuomio.paatosnumero}`,
             value: `<@${tuomio.valittu.userId}> ${tuomio.valittu.lause}.\n**Rangaistus:** ${tuomio.rangaistus}`
         });
-        await kirjaaTuomio(guild.id, tuomio.valittu.userId, tuomio.rangaistus, "automaattinen päivätuomio", true);
     } else {
-        embed.addFields({ name: "⚖️ Päätös", value: "Ei tarpeeksi eilistä aktiivisuutta päätöksen tekemiseen." });
+        embed.addFields({ name: "⚖️ Päätös", value: satunnainen(DIGEST_EI_TUOMIOTA) });
     }
 
     if (topViestit.length) {
         embed.addFields({
-            name: "💬 Eilisen top-kirjoittajat",
-            value: renderLeaderboard(topViestit, r => `${r.count} viestiä`)
+            name: satunnainen(DIGEST_TOP_OTSIKOT),
+            // Oikeat rivinvaihdot (aiemmin merkkijonoon jäi kirjaimellinen "\n\n").
+            value: `${renderLeaderboard(topViestit, r => `${r.count} viestiä`)}\n\n_${satunnainen(DIGEST_TOP_KOMMENTIT)}_`
         });
     }
 
-    embed.setFooter({ text: "Kanavaa voi vaihtaa komennolla /ilmoituskanava" });
+    embed.setFooter({ text: satunnainen(DIGEST_FOOTERIT) });
 
     await kanava.send({ embeds: [embed] });
+
+    // Tuomio kirjataan vasta kun viesti on oikeasti lähtenyt. Aiemmin kirjaus
+    // tehtiin ennen lähetystä, jolloin epäonnistunut lähetys tuotti uuden
+    // tuomiorivin joka 10. minuutti kunnes lähetys onnistui.
+    if (tuomio) {
+        await kirjaaTuomio(guild.id, tuomio.valittu.userId, tuomio.rangaistus, "automaattinen päivätuomio", true);
+    }
 
 }
 
 async function ajaTarkistus(client) {
 
-    const asetukset = await haeKaikkiAsetuksetJoillaKanava();
-    const tanaanPvm = tanaan();
-    const eilinen = eilinenPvm();
+    // Estää päällekkäiset ajot, jos edellinen tarkistus on vielä kesken.
+    if (tarkistusKaynnissa) return;
+    tarkistusKaynnissa = true;
 
-    for (const asetus of asetukset) {
+    try {
 
-        if (asetus.lastDigestDate === tanaanPvm) continue; // jo lähetetty tänään
+        const asetukset = await haeKaikkiAsetuksetJoillaKanava();
+        const tanaanPvm = tanaan();
+        const eilinen = eilinenPvm();
 
-        const guild = client.guilds.cache.get(asetus.guildId);
-        if (!guild) continue;
+        for (const asetus of asetukset) {
 
-        const kanava = guild.channels.cache.get(asetus.announceChannelId);
-        if (!kanava) continue;
+            if (asetus.lastDigestDate === tanaanPvm) continue; // jo lähetetty tänään
 
-        try {
-            await postaaDigest(guild, kanava, eilinen);
-            await merkitseDigestLahetetyksi(asetus.guildId, tanaanPvm);
-            console.log(`📨 Päivittäinen tiedote postattu palvelimelle: ${guild.name}`);
-        } catch (err) {
-            console.error(`❌ Digestin postaus epäonnistui palvelimelle ${guild.name}:`, err);
+            const guild = client.guilds.cache.get(asetus.guildId);
+            if (!guild) continue;
+
+            const kanava = guild.channels.cache.get(asetus.announceChannelId);
+            if (!kanava?.isTextBased?.()) continue;
+
+            try {
+                await postaaDigest(guild, kanava, eilinen);
+                await merkitseDigestLahetetyksi(asetus.guildId, tanaanPvm);
+                console.log(`📨 Päivittäinen tiedote postattu palvelimelle: ${guild.name}`);
+            } catch (err) {
+                console.error(`❌ Digestin postaus epäonnistui palvelimelle ${guild.name}:`, err?.message ?? err);
+            }
+
         }
 
+    } finally {
+        tarkistusKaynnissa = false;
     }
 
 }
 
 function kaynnistaAjastin(client) {
 
+    if (ajastinKaynnistetty) return;
+    ajastinKaynnistetty = true;
+
     // Ensimmäinen ajo pienellä viiveellä, jotta guildit/kanavat ehtivät ladata cacheen.
     setTimeout(() => {
-        ajaTarkistus(client).catch(err => console.error("❌ Ajastimen ensimmäinen ajo epäonnistui:", err));
+        ajaTarkistus(client).catch(err => console.error("❌ Ajastimen ensimmäinen ajo epäonnistui:", err?.message ?? err));
     }, 15000);
 
     setInterval(() => {
-        ajaTarkistus(client).catch(err => console.error("❌ Ajastimen ajo epäonnistui:", err));
+        ajaTarkistus(client).catch(err => console.error("❌ Ajastimen ajo epäonnistui:", err?.message ?? err));
     }, TARKISTUSVALI_MS);
 
     console.log("⏰ Automaattisten päivätuomioiden ajastin käynnistetty.");
 
 }
 
-module.exports = { kaynnistaAjastin };
+module.exports = { kaynnistaAjastin, ajaTarkistus, postaaDigest, rakennaAutomaattinenTuomio };

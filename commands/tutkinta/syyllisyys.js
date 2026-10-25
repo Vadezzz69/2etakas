@@ -2,6 +2,8 @@ const { SlashCommandBuilder } = require("discord.js");
 const { haeSyyllisyysprosentti, haeSyyllisyysHistoria, haeSyyllisinLista, haeTuomioidenMaara } = require("../../utils/tutkintadata");
 const { ranking, createEmbed, formatProgressBar, renderLeaderboard } = require("../../utils/ui");
 const { VARIT } = require("../../utils/tyyli");
+const { satunnainen } = require("../../utils/satunnainen");
+const { SYYLLISYYS_TYHJA } = require("../../utils/comedy/data/viestit");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -19,7 +21,7 @@ module.exports = {
             const lista = await haeSyyllisinLista(interaction.guildId);
 
             if (!lista.length) {
-                return interaction.reply("Kukaan ei ole vielä kerännyt syyllisyyttä. Epäilyttävän puhdas palvelin.");
+                return interaction.reply(satunnainen(SYYLLISYYS_TYHJA));
             }
 
             const embed = ranking({

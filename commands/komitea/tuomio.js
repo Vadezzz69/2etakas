@@ -1,7 +1,9 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
-const { RANGAISTUKSET, satunnainen, satunnaisVali } = require("../../utils/komiteadata");
+const { RANGAISTUKSET } = require("../../utils/komiteadata");
+const { satunnainen, satunnaisVali } = require("../../utils/satunnainen");
 const { VARIT } = require("../../utils/tyyli");
 const { kirjaaTuomio, lisaaSyyllisyytta } = require("../../utils/tutkintadata");
+const { tayta, TUOMIO_OTSIKOT, TUOMIO_JOHDANNOT, TUOMIO_FOOTERIT } = require("../../utils/comedy/data/viestit");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -22,12 +24,12 @@ module.exports = {
 
         const embed = new EmbedBuilder()
             .setColor(VARIT.AKSENTTI)
-            .setTitle(`⚖️ Tuomio — asia nro ${asianumero}`)
+            .setTitle(tayta(satunnainen(TUOMIO_OTSIKOT), { nro: asianumero }))
             .setDescription(
-                `${kayttaja} on todettu syylliseksi komitean silmissä.\n\n` +
+                `${tayta(satunnainen(TUOMIO_JOHDANNOT), { k: `${kayttaja}` })}\n\n` +
                 `**Tuomio:**\n${tuomio}`
             )
-            .setFooter({ text: "Muutoksenhaku ei ole mahdollista. Valitettavasti." });
+            .setFooter({ text: satunnainen(TUOMIO_FOOTERIT) });
 
         await interaction.reply({ embeds: [embed] });
 

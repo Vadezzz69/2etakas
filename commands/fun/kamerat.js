@@ -2,6 +2,8 @@ const { SlashCommandBuilder } = require("discord.js");
 const { report } = require("../../utils/ui");
 const { generoiKamerat } = require("../../utils/comedy");
 const { ehkaKaannaKutsujaksi } = require("../../utils/trolli");
+const { satunnainen } = require("../../utils/satunnainen");
+const { KAMERAT_ALATUNNISTEET } = require("../../utils/comedy/data/viestit");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -23,7 +25,7 @@ module.exports = {
             title: `📹 VALVONTAKAMEROIDEN AIKAJANA — ${kohde.username}`,
             description: (kaannetty ? `${kommentti}\n\n` : "") + rivit,
             thumbnail: kohde.displayAvatarURL(),
-            footer: "Kamerat eivät ole oikeita. Toivottavasti."
+            footer: satunnainen(KAMERAT_ALATUNNISTEET)
         });
 
         await interaction.reply({ embeds: [embed] });

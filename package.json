@@ -1,29 +1,28 @@
 {
   "name": "komiteanvakoojabot",
-  "version": "1.0.0",
-  "description": "",
+  "version": "1.1.0",
+  "description": "Komitean Discord-botti: tilastot, trollikomennot ja moderointi.",
   "main": "index.js",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node index.js",
-    "postinstall": "npm install sqlite3@5.1.7 --build-from-source",
     "dev": "nodemon index.js",
     "deploy": "node deploy-commands.js",
+    "tarkista": "node deploy-commands.js --kuiva",
     "uusikomento": "node scripts/uusikomento.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node scripts/tarkista.js",
+    "ajotesti": "node scripts/ajotesti.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@discordjs/builders": "^1.14.1",
-    "@discordjs/rest": "^2.6.1",
-    "ascii-table": "^0.0.9",
-    "discord-api-types": "^0.38.49",
     "discord.js": "^14.26.5",
     "dotenv": "^17.4.2",
-    "express": "^4.21.2",
-    "sqlite3": "^5.1.7"
+    "express": "^4.21.2"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

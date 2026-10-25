@@ -1,6 +1,8 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
-const { satunnainen, SALAISUUDET } = require("../../utils/vakoiludata");
+const { SALAISUUDET } = require("../../utils/vakoiludata");
+const { satunnainen } = require("../../utils/satunnainen");
 const { VARIT } = require("../../utils/tyyli");
+const { SALAISUUS_OTSIKOT, SALAISUUS_FOOTERIT } = require("../../utils/comedy/data/viestit");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -13,9 +15,9 @@ module.exports = {
 
         const embed = new EmbedBuilder()
             .setColor(VARIT.PERUS)
-            .setTitle("🔓 LUOKITELTU — Taso Omega")
+            .setTitle(satunnainen(SALAISUUS_OTSIKOT))
             .setDescription(`||${salaisuus}||`)
-            .setFooter({ text: "Klikkaa paljastaaksesi. Unohda heti lukemisen jälkeen." });
+            .setFooter({ text: satunnainen(SALAISUUS_FOOTERIT) });
 
         await interaction.reply({ embeds: [embed] });
 

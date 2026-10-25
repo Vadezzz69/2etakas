@@ -6,6 +6,8 @@ const {
     haeViimeisimmatLoukkaantumiset,
     haeLoukkaantumisLista
 } = require("../../utils/vammadata");
+const { satunnainen } = require("../../utils/satunnainen");
+const { tayta, VAMMA_EI_YHTAAN, VAMMA_LISTA_TYHJA } = require("../../utils/comedy/data/viestit");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -22,7 +24,7 @@ module.exports = {
             const count = await haeLoukkaantumistenMaara(interaction.guildId, target.id);
 
             if (count === 0) {
-                return interaction.reply(`${target.username} ei ole loukkaantunut kertaakaan. Vielä. 🍀`);
+                return interaction.reply(tayta(satunnainen(VAMMA_EI_YHTAAN), { nimi: target.username }));
             }
 
             const recent = await haeViimeisimmatLoukkaantumiset(interaction.guildId, target.id, 5);
@@ -46,7 +48,7 @@ module.exports = {
         const rows = await haeLoukkaantumisLista(interaction.guildId, 10);
 
         if (!rows.length) {
-            return interaction.reply("Ei loukkaantumisia kirjattuna vielä. Kaikki turvassa! 🛡️");
+            return interaction.reply(satunnainen(VAMMA_LISTA_TYHJA));
         }
 
         const embed = ranking({

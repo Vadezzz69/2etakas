@@ -1,6 +1,6 @@
 const { RIKOKSET } = require("../data/rikokset");
-const { SAKKO_YKSIKOT, satunnaisVali } = require("../../komiteadata");
-const { satunnainen, taytaLukuPaikanvaraaja } = require("./random");
+const { SAKKO_YKSIKOT } = require("../../komiteadata");
+const { satunnainen, satunnaisVali, taytaLukuPaikanvaraaja } = require("./random");
 
 /**
  * /sakota on tarkoituksella eri komento kuin /sakko: tämä ei kirjaudu

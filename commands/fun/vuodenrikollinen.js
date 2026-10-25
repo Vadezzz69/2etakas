@@ -1,6 +1,14 @@
 const { SlashCommandBuilder } = require("discord.js");
 const { report } = require("../../utils/ui");
 const { generoiVuodenRikollinen } = require("../../utils/comedy");
+const { satunnainen } = require("../../utils/satunnainen");
+const {
+    tayta,
+    VUODEN_OTSIKOT,
+    VUODEN_KUVAUKSET,
+    VUODEN_FOOTERIT,
+    VUODEN_EI_DATAA
+} = require("../../utils/comedy/data/viestit");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -14,17 +22,12 @@ module.exports = {
         const tulos = await generoiVuodenRikollinen(interaction.guildId);
 
         if (!tulos) {
-            return interaction.editReply(
-                "Ei tarpeeksi dataa palkintogaalaan vielä. Komitea odottaa lisää rikkeitä."
-            );
+            return interaction.editReply(satunnainen(VUODEN_EI_DATAA));
         }
 
         const embed = report({
-            title: "🏆 VUODEN RIKOLLINEN",
-            description:
-                `Komitea on tutkinut kaiken saatavilla olevan datan — syyllisyyden, sakot, ` +
-                `tutkinnat, äänikanava-ajan ja viestimäärän — ja julistaa voittajan.\n\n` +
-                `## 🥇 <@${tulos.voittaja}>`,
+            title: satunnainen(VUODEN_OTSIKOT),
+            description: tayta(satunnainen(VUODEN_KUVAUKSET), { voittaja: tulos.voittaja }),
             fields: [
                 { name: "Yhdistetty pistemäärä", value: `${tulos.pistemaara} / 100`, inline: true },
                 { name: "Ehdokkaita yhteensä", value: `${tulos.ehdokkaidenMaara}`, inline: true },
@@ -32,7 +35,7 @@ module.exports = {
                     ? [{ name: "Kunniamaininta (2. sija)", value: `<@${tulos.toiseksiTullut}>` }]
                     : [])
             ],
-            footer: "Palkintoseremonia järjestetään heti kun joku muistaa varata tilan."
+            footer: satunnainen(VUODEN_FOOTERIT)
         });
 
         await interaction.editReply({ embeds: [embed] });

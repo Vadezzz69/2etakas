@@ -7,17 +7,6 @@ function formatNumber(value, locale = "fi-FI") {
     return new Intl.NumberFormat(locale).format(Number(value) || 0);
 }
 
-function formatPercent(value, { decimals = 0, locale = "fi-FI" } = {}) {
-    const number = Number(value);
-    const safeValue = Number.isFinite(number) ? number : 0;
-
-    return new Intl.NumberFormat(locale, {
-        style: "percent",
-        minimumFractionDigits: decimals,
-        maximumFractionDigits: decimals
-    }).format(safeValue > 1 ? safeValue / 100 : safeValue);
-}
-
 function formatDuration(seconds, { short = false } = {}) {
     const totalSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
     const days = Math.floor(totalSeconds / 86400);
@@ -63,6 +52,13 @@ function formatRanking(rank, fallback = "Ei sijoitusta vielä") {
     return `#${rank.position} / ${rank.total}`;
 }
 
+// Stats Enginen sisäiset tasot (inactive/low/moderate/medium/high) suomeksi näytettäväksi.
+const TASOT = { inactive: "hiljainen", low: "matala", moderate: "kohtalainen", medium: "keskitaso", high: "korkea" };
+
+function formatLevel(taso) {
+    return TASOT[taso] ?? String(taso);
+}
+
 const OLETUSMITALIT = ["🥇", "🥈", "🥉"];
 
 /**
@@ -78,11 +74,11 @@ function renderLeaderboard(rivit, muotoileRivi, mitalit = OLETUSMITALIT) {
 
 module.exports = {
     formatNumber,
-    formatPercent,
     formatDuration,
     formatDate,
     mentionUser,
     formatProgressBar,
     formatRanking,
+    formatLevel,
     renderLeaderboard
 };

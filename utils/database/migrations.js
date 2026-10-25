@@ -1,3 +1,10 @@
+// Tietokannan skeema (Cloudflare D1) viitteenä. Botti ei aja näitä itse: taulut on
+// luotu D1:een aiemmin, ja `utils/db.js` puhuu D1:n kanssa Worker-rajapinnan
+// (`d1-worker/`) kautta. Tämä tiedosto kertoo mitä tauluja botti odottaa
+// löytyvän, jos D1-tietokanta täytyy joskus luoda tyhjästä (kaikki lauseet ovat
+// `IF NOT EXISTS`, joten ne voi ajaa turvallisesti myös olemassa olevaan kantaan).
+// Skeemaa ei ole muutettu.
+
 const migrations = [
     {
         id: 1,
@@ -42,32 +49,4 @@ const migrations = [
     }
 ];
 
-function applyMigrations(db) {
-    return new Promise((resolve, reject) => {
-        db.serialize(() => {
-            db.run(`CREATE TABLE IF NOT EXISTS schema_migrations (id INTEGER PRIMARY KEY, name TEXT NOT NULL, appliedAt INTEGER NOT NULL)`, error => {
-                if (error) return reject(error);
-            });
-
-            for (const migration of migrations) {
-                for (const statement of migration.statements) {
-                    db.run(statement, error => {
-                        if (error) console.error(`Database migration ${migration.id} failed:`, error);
-                    });
-                }
-
-                db.run(
-                    `INSERT OR IGNORE INTO schema_migrations (id, name, appliedAt) VALUES (?, ?, ?)`,
-                    [migration.id, migration.name, Date.now()]
-                );
-            }
-
-            db.get(`SELECT COUNT(*) AS count FROM schema_migrations`, (error, row) => {
-                if (error) return reject(error);
-                resolve(row.count);
-            });
-        });
-    });
-}
-
-module.exports = { applyMigrations, migrations };
+module.exports = { migrations };

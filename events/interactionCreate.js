@@ -1,5 +1,26 @@
 const { Events } = require("discord.js");
 const { kirjaaKomento } = require("../utils/tilastot");
+const { satunnainen } = require("../utils/satunnainen");
+const { VIRHEVIESTIT, VANHAT_KOMENNOT } = require("../utils/comedy/data/viestit");
+
+/**
+ * Kertoo käyttäjälle virheestä niin, ettei virheilmoituksen lähetys itse voi
+ * heittää uutta käsittelemätöntä virhettä (esim. jos vuorovaikutus on jo
+ * vanhentunut tai komento ehti vastata ennen kaatumista).
+ */
+async function ilmoitaVirhe(interaction, teksti) {
+    try {
+        if (interaction.deferred && !interaction.replied) {
+            await interaction.editReply({ content: teksti, embeds: [], components: [] });
+        } else if (interaction.replied) {
+            await interaction.followUp({ content: teksti, ephemeral: true });
+        } else {
+            await interaction.reply({ content: teksti, ephemeral: true });
+        }
+    } catch (err) {
+        console.error("❌ Virheilmoituksen lähetys epäonnistui:", err?.message ?? err);
+    }
+}
 
 module.exports = {
     name: Events.InteractionCreate,
@@ -10,41 +31,25 @@ module.exports = {
         const command = client.commands.get(interaction.commandName);
 
         if (!command) {
-            console.warn(`⚠️  Tuntematon komento: ${interaction.commandName}`);
-            return;
+            // Discord muistaa vielä vanhan komennon, jota ei enää ole koodissa.
+            console.warn(`⚠️ Tuntematon komento: /${interaction.commandName}`);
+            return ilmoitaVirhe(interaction, satunnainen(VANHAT_KOMENNOT));
         }
 
         try {
 
-                 console.log(`➡️ Aloitetaan komento: ${interaction.commandName}`);
-
-                 await command.execute(interaction, client);
-
-                 console.log(`✅ Komento valmis: ${interaction.commandName}`);
-
-            if (interaction.guildId) {
-                kirjaaKomento(interaction.guildId, interaction.user.id, interaction.commandName)
-                    .catch(err => console.error("❌ Komentotilaston kirjaus epäonnistui:", err));
-            }
+            await command.execute(interaction, client);
 
         } catch (err) {
 
-                    console.error("==================================");
-                    console.error(`❌ Virhe komennossa: ${interaction.commandName}`);
-                    console.error(err);
-                    console.error(err.stack);
-                    console.error("==================================");
-            const errorReply = {
-                content: "Komennon suorittaminen epäonnistui. 😕",
-                ephemeral: true
-            };
+            console.error(`❌ Virhe komennossa /${interaction.commandName}:`, err);
+            return ilmoitaVirhe(interaction, satunnainen(VIRHEVIESTIT));
 
-            if (interaction.replied || interaction.deferred) {
-                await interaction.followUp(errorReply);
-            } else {
-                await interaction.reply(errorReply);
-            }
+        }
 
+        if (interaction.guildId) {
+            kirjaaKomento(interaction.guildId, interaction.user.id, interaction.commandName)
+                .catch(err => console.error("❌ Komentotilaston kirjaus epäonnistui:", err?.message ?? err));
         }
 
     }

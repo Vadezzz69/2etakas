@@ -1,6 +1,8 @@
 const { SlashCommandBuilder } = require("discord.js");
 const { report } = require("../../utils/ui");
 const { generoiTakavarikko } = require("../../utils/comedy");
+const { satunnainen } = require("../../utils/satunnainen");
+const { TAKAVARIKKO_ALATUNNISTEET } = require("../../utils/comedy/data/viestit");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -22,7 +24,7 @@ module.exports = {
             fields: [
                 { name: `Takavarikoitu (${esineet.length} kpl)`, value: esineet.map(e => `• ${e}`).join("\n") }
             ],
-            footer: "Omaisuus palautetaan kun komitea muistaa minne se laitettiin."
+            footer: satunnainen(TAKAVARIKKO_ALATUNNISTEET)
         });
 
         await interaction.reply({ embeds: [embed] });

@@ -1,7 +1,7 @@
 const { createEmbed } = require("./embed");
 const { COLORS } = require("./colors");
 const { ICONS } = require("./icons");
-const { formatProgressBar } = require("./format");
+const { formatProgressBar, formatLevel } = require("./format");
 
 // Maps a Stats Engine risk level to the embed accent color. Kept next to the
 // embed builder (a UI concern) rather than inside the Stats Engine, which
@@ -58,12 +58,12 @@ function buildProfileEmbed({
         fields.push(
             spacerField(),
             {
-                name: `${ICONS.activity} Aktiivisuus (${profile.activityLevel})`,
+                name: `${ICONS.activity} Aktiivisuus (${formatLevel(profile.activityLevel)})`,
                 value: formatProgressBar(profile.activityPercent),
                 inline: true
             },
             {
-                name: `${ICONS.risk} Riskitaso (${profile.riskLevel})`,
+                name: `${ICONS.risk} Riskitaso (${formatLevel(profile.riskLevel)})`,
                 value: formatProgressBar(profile.riskPercent),
                 inline: true
             },

@@ -1,6 +1,8 @@
 const { SlashCommandBuilder } = require("discord.js");
 const { report } = require("../../utils/ui");
 const { generoiTodiste } = require("../../utils/comedy");
+const { satunnainen } = require("../../utils/satunnainen");
+const { TODISTE_ALATUNNISTEET } = require("../../utils/comedy/data/viestit");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -19,7 +21,7 @@ module.exports = {
             title: "🗂️ Todistusaineisto",
             description: `Esitetään todisteena käyttäjää ${kohde} vastaan:`,
             fields: [{ name: "Todiste", value: todiste }],
-            footer: "Todisteen alkuperää ei voida vahvistaa. Eikä sitä yritetä."
+            footer: satunnainen(TODISTE_ALATUNNISTEET)
         });
 
         await interaction.reply({ embeds: [embed] });

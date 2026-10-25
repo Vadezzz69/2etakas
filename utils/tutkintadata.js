@@ -12,10 +12,6 @@ async function asetaIlmoituskanava(guildId, channelId) {
     );
 }
 
-async function haeAsetukset(guildId) {
-    return get(`SELECT * FROM guild_settings WHERE guildId = ?`, [guildId]);
-}
-
 async function merkitseDigestLahetetyksi(guildId, paivamaara) {
     await run(
         `INSERT INTO guild_settings (guildId, lastDigestDate) VALUES (?, ?)
@@ -170,10 +166,6 @@ async function suljeAanestys(voteId) {
     await run(`UPDATE votes SET status = 'closed' WHERE id = ?`, [voteId]);
 }
 
-async function haeAanestys(voteId) {
-    return get(`SELECT * FROM votes WHERE id = ?`, [voteId]);
-}
-
 // =====================================================
 // TUOMIOHISTORIA (kaikki /tuomio, /komitea ja automaattiset tuomiot)
 // =====================================================
@@ -182,14 +174,6 @@ async function kirjaaTuomio(guildId, userId, verdict, source, automated = false)
     await run(
         `INSERT INTO verdicts_log (guildId, userId, verdict, source, automated, timestamp) VALUES (?, ?, ?, ?, ?, ?)`,
         [guildId, userId, verdict, source, automated ? 1 : 0, Date.now()]
-    );
-}
-
-async function haeTuomiohistoria(guildId, userId, limit = 10) {
-    return all(
-        `SELECT verdict, source, automated, timestamp FROM verdicts_log
-         WHERE guildId = ? AND userId = ? ORDER BY timestamp DESC LIMIT ?`,
-        [guildId, userId, limit]
     );
 }
 
@@ -214,17 +198,6 @@ async function kirjaaSakko(guildId, userId, amount, unit, reason, issuedBy) {
             issuedBy,
             Date.now()
         ]
-    );
-}
-
-async function haeSakot(guildId, userId) {
-    return all(
-        `SELECT *
-         FROM fines
-         WHERE guildId = ?
-         AND userId = ?
-         ORDER BY timestamp DESC`,
-        [guildId, userId]
     );
 }
 
@@ -255,7 +228,6 @@ async function haeSuurimmatSakot(guildId, limit = 10) {
 }
 module.exports = {
     asetaIlmoituskanava,
-    haeAsetukset,
     merkitseDigestLahetetyksi,
     haeKaikkiAsetuksetJoillaKanava,
 
@@ -279,14 +251,11 @@ module.exports = {
     annaAani,
     haeAanestysTulos,
     suljeAanestys,
-    haeAanestys,
 
     kirjaaTuomio,
-    haeTuomiohistoria,
     haeTuomioidenMaara,
 
     kirjaaSakko,
-    haeSakot,
     haeSakkojenMaara,
     haeSuurimmatSakot,
 };

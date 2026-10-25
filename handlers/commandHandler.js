@@ -1,50 +1,21 @@
-const fs = require("fs");
-const path = require("path");
 const { Collection } = require("discord.js");
+const { lataaKomennot } = require("./commandLoader");
 
 module.exports = (client) => {
 
     client.commands = new Collection();
 
-    const commandsPath = path.join(process.cwd(), "commands");
-    const folders = fs.readdirSync(commandsPath);
+    const { komennot, ongelmat } = lataaKomennot();
 
-    let count = 0;
-
-    for (const folder of folders) {
-
-        const folderPath = path.join(commandsPath, folder);
-
-        const commandFiles = fs
-            .readdirSync(folderPath)
-            .filter(file => file.endsWith(".js"));
-
-        for (const file of commandFiles) {
-
-            const filePath = path.join(folderPath, file);
-
-            let command;
-
-            try {
-                command = require(filePath);
-                console.log(`📄 ${file}:`, Object.keys(command));
-            } catch (err) {
-                console.error(`❌ Virhe ladattaessa komentoa ${file}:`);
-                console.error(err);
-                continue;
-            }
-
-            if (!command || !command.data || !command.execute) {
-                console.warn(`⚠️ Komennosta ${file} puuttuu "data" tai "execute"`);
-                console.log(command);
-                continue;
-            }
-
-            command.kategoria = folder;
-            client.commands.set(command.data.name, command);
-            count++;
-        }
+    for (const { nimi, kategoria, komento } of komennot) {
+        komento.kategoria = kategoria;
+        client.commands.set(nimi, komento);
     }
 
-    console.log(`📦 Ladattu ${count} komentoa.`);
+    for (const ongelma of ongelmat) {
+        console.warn(`⚠️ Komentoa ${ongelma.tiedosto} ei ladattu: ${ongelma.syy}`);
+        if (ongelma.virhe) console.error(ongelma.virhe);
+    }
+
+    console.log(`📦 Ladattu ${client.commands.size} komentoa.`);
 };

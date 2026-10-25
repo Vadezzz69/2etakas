@@ -22,12 +22,13 @@ const BRANDI = {
  *
  * @param {number} prosentti 0-100
  * @param {number} pituus lohkojen määrä (oletus 12)
+ * @param {{taytto?: string, tyhja?: string}} [merkit] palkin merkit (oletus █ / ░)
  * @returns {string} esim. "████████░░░░"
  */
-function palkki(prosentti, pituus = 12) {
+function palkki(prosentti, pituus = 12, { taytto = "█", tyhja = "░" } = {}) {
     const p = Math.max(0, Math.min(100, prosentti));
     const tayta = Math.round((p / 100) * pituus);
-    return "█".repeat(tayta) + "░".repeat(Math.max(0, pituus - tayta));
+    return taytto.repeat(tayta) + tyhja.repeat(Math.max(0, pituus - tayta));
 }
 
 module.exports = { VARIT, BRANDI, palkki };

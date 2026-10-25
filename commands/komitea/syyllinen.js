@@ -1,7 +1,15 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const { aktiivisinKirjoittaja } = require("../../utils/tilastot");
-const { RIKOKSET, satunnainen } = require("../../utils/komiteadata");
+const { RIKOKSET } = require("../../utils/komiteadata");
+const { satunnainen } = require("../../utils/satunnainen");
 const { VARIT } = require("../../utils/tyyli");
+const {
+    tayta,
+    SYYLLINEN_OTSIKOT,
+    SYYLLINEN_JULISTUKSET,
+    SYYLLINEN_PERUSTEET_AKTIIVINEN,
+    SYYLLINEN_PERUSTEET_ARPA
+} = require("../../utils/comedy/data/viestit");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -19,22 +27,26 @@ module.exports = {
 
         if (kirjoittaja && kirjoittaja.count > 0) {
             kohdeId = kirjoittaja.userId;
-            peruste = `Epäilyt heräsivät, koska kohde oli tänään palvelimen aktiivisin kirjoittaja (${kirjoittaja.count} viestiä).`;
+            peruste = tayta(satunnainen(SYYLLINEN_PERUSTEET_AKTIIVINEN), { n: kirjoittaja.count });
         } else {
             const jasenet = await interaction.guild.members.fetch();
-            const ehdokkaat = jasenet.filter(m => !m.user.bot);
-            const arvottu = satunnainen([...ehdokkaat.values()]);
-            kohdeId = arvottu.id;
-            peruste = "Ei riittävästi todisteita — komitea arpoi syyllisen puhtaasti sattumanvaraisesti.";
+            const ehdokkaat = [...jasenet.filter(m => !m.user.bot).values()];
+
+            if (!ehdokkaat.length) {
+                return interaction.editReply("Palvelimelta ei löytynyt yhtään ei-bottia. Syyllistä ei voi arpoa. Komitea on hämmentynyt.");
+            }
+
+            kohdeId = satunnainen(ehdokkaat).id;
+            peruste = satunnainen(SYYLLINEN_PERUSTEET_ARPA);
         }
 
         const rikos = satunnainen(RIKOKSET);
 
         const embed = new EmbedBuilder()
             .setColor(VARIT.AKSENTTI)
-            .setTitle("⚖️ Päivän syyllinen on löydetty")
+            .setTitle(satunnainen(SYYLLINEN_OTSIKOT))
             .setDescription(
-                `Komitea julistaa: <@${kohdeId}> on tämän päivän syyllinen.\n\n` +
+                `${tayta(satunnainen(SYYLLINEN_JULISTUKSET), { k: `<@${kohdeId}>` })}\n\n` +
                 `**Epäilty rikos:** ${rikos}\n` +
                 `**Peruste:** ${peruste}`
             );

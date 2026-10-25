@@ -1,8 +1,11 @@
 # Roast Engine
 
 The Roast Engine creates Committee-style comments strictly from measured
-server data. It uses no random selection: template scores are derived from
-the member's current statistics and ties are resolved by template id.
+server data. *Which* observations are chosen is never random: template scores
+are derived from the member's current statistics and ties are resolved by
+template id. Only the *wording* varies — each template, opening, transition and
+closing has several interchangeable variants, drawn through
+`utils/satunnainen.js` (which avoids repeating the most recent picks).
 
 ```js
 const { generateRoast, analyzeRoast } = require("../../utils/roastEngine");
@@ -38,8 +41,9 @@ Composition happens in two steps (`compose.js`):
 2. **Contextual closing sentence** — a second sentence editorializes on the
    *dominant* category among the selected observations (legal > standing >
    record > volume > state > general), using a transition phrase and a
-   closing phrase from `phrases.js`. Nothing here is randomized: the closing
-   always follows from which categories were actually observed.
+   closing phrase from `phrases.js`. The closing's *meaning* always follows from
+   which categories were actually observed; only its wording is drawn from a
+   few variants.
 
 ## Templates
 
@@ -50,7 +54,8 @@ an object with:
 - `category` — `"volume" | "legal" | "standing" | "record" | "state"`, used
   by the composer to pick the dominant theme and its transition/closing
 - `score(stats)` — data-derived score; `0` means "not applicable"
-- `text(stats)` — the clause merged into the lead sentence
+- `text(stats)` — the clause merged into the lead sentence (picks one of
+  several wordings)
 
 Collectors cover messages, voice, fines, recent and open investigations,
 rankings, and achievement thresholds — all sourced from the Stats Engine's

@@ -1,6 +1,8 @@
 const { SlashCommandBuilder } = require("discord.js");
 const { warning } = require("../../utils/ui");
 const { generoiSyyte } = require("../../utils/comedy");
+const { satunnainen } = require("../../utils/satunnainen");
+const { SYYTE_ALATUNNISTEET } = require("../../utils/comedy/data/viestit");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -23,7 +25,8 @@ module.exports = {
                 { name: "Todistusaineisto", value: syyte.todiste },
                 { name: "Todistaja", value: `${syyte.todistaja} ${syyte.todistajaKommentti}` },
                 { name: "Rangaistussuositus", value: syyte.suositus }
-            ]
+            ],
+            footer: satunnainen(SYYTE_ALATUNNISTEET)
         });
 
         await interaction.reply({ embeds: [embed] });

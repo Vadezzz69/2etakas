@@ -1,6 +1,8 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const { lisaaEpailty, haeAktiivisetEpaillyt, poistaEpailyistaAktiivisuus } = require("../../utils/tutkintadata");
 const { VARIT } = require("../../utils/tyyli");
+const { satunnainen } = require("../../utils/satunnainen");
+const { EPAILY_TYHJA } = require("../../utils/comedy/data/viestit");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -11,7 +13,7 @@ module.exports = {
                 .setName("lisaa")
                 .setDescription("Lisää käyttäjän epäiltyjen listalle.")
                 .addUserOption(o => o.setName("kayttaja").setDescription("Epäilty").setRequired(true))
-                .addStringOption(o => o.setName("syy").setDescription("Epäilyn syy").setRequired(true))
+                .addStringOption(o => o.setName("syy").setDescription("Epäilyn syy").setRequired(true).setMaxLength(300))
         )
         .addSubcommand(sub =>
             sub
@@ -51,7 +53,7 @@ module.exports = {
             const epaillyt = await haeAktiivisetEpaillyt(interaction.guildId);
 
             if (!epaillyt.length) {
-                return interaction.reply("Epäiltyjen lista on tyhjä. Kaikki näyttävät toistaiseksi viattomilta. 🙂");
+                return interaction.reply(satunnainen(EPAILY_TYHJA));
             }
 
             const embed = new EmbedBuilder()

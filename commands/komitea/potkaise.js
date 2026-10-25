@@ -1,25 +1,11 @@
-const { SlashCommandBuilder } = require("discord.js");
-const { suoritaFeikkiToiminto } = require("../../utils/feikkitoiminto");
+const { luoFeikkiKomento } = require("../../utils/feikkitoiminto");
+const { FEIKKI_POTKAISE } = require("../../utils/comedy/data/viestit");
 
-module.exports = {
-    data: new SlashCommandBuilder()
-        .setName("potkaise")
-        .setDescription("\"Potkaisee\" käyttäjän palvelimelta. (Pelkkä trolli — ei tee oikeasti mitään.)")
-        .addUserOption(option =>
-            option.setName("kayttaja").setDescription("Potkaistava käyttäjä").setRequired(true)
-        )
-        .addStringOption(option =>
-            option.setName("syy").setDescription("Syy potkulle").setRequired(false)
-        ),
-
-    async execute(interaction) {
-        const user = interaction.options.getUser("kayttaja");
-        const reason = interaction.options.getString("syy") ?? "Syytä ei annettu";
-
-        await suoritaFeikkiToiminto(interaction, {
-            kuvaus: `👢 **${user.tag}** potkaistiin palvelimelta.\n**Syy:** ${reason}`,
-            paljastus: `😂 Rauhoitu, ihan vitsi. ${user} on yhä täällä — komitea vain halusi pelotella hieman.`,
-            viiveMs: 2500
-        });
-    }
-};
+module.exports = luoFeikkiKomento({
+    nimi: "potkaise",
+    kuvaus: "\"Potkaisee\" käyttäjän palvelimelta. (Pelkkä trolli — ei tee oikeasti mitään.)",
+    kohdeKuvaus: "Potkaistava käyttäjä",
+    syyKuvaus: "Syy potkulle",
+    data: FEIKKI_POTKAISE,
+    viiveMs: 2500
+});

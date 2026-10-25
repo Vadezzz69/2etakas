@@ -1,5 +1,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require("discord.js");
 const { VARIT } = require("../../utils/tyyli");
+const { satunnainen } = require("../../utils/satunnainen");
+const { TYHJENNA_VIRHE } = require("../../utils/comedy/data/viestit");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -33,11 +35,10 @@ module.exports = {
 
         } catch (err) {
 
-            // Discord ei salli yli 14 vrk vanhojen viestien joukkopoistoa.
-            await interaction.editReply(
-                "En pystynyt poistamaan viestejä. Discord ei salli yli 14 vuorokautta " +
-                "vanhojen viestien joukkopoistoa — ne pitää poistaa käsin."
-            );
+            // Yleisin syy: Discord ei salli yli 14 vrk vanhojen viestien joukkopoistoa.
+            // Kirjataan silti varsinainen syy lokiin (esim. puuttuvat oikeudet).
+            console.error("❌ /tyhjenna epäonnistui:", err?.message ?? err);
+            await interaction.editReply(satunnainen(TYHJENNA_VIRHE));
 
         }
 

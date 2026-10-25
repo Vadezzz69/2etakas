@@ -20,49 +20,66 @@ function tanaanHelsingissa(viitehetki = new Date()) {
 }
 
 /**
- * Eilisen päivämäärä Helsingin aikavyöhykkeellä. Vähennetään 24 tuntia
- * absoluuttisesta ajasta ja luetaan sen jälkeen Helsingin kalenteripäivä —
- * tämä pysyy oikeana myös kesä-/talviajan vaihtumisyönä.
- */
-function eilinenHelsingissa(viitehetki = new Date()) {
-    const vuorokausiSitten = new Date(viitehetki.getTime() - 24 * 60 * 60 * 1000);
-    return tanaanHelsingissa(vuorokausiSitten);
-}
-
-/**
  * N päivää sitten Helsingin aikavyöhykkeellä, muodossa YYYY-MM-DD.
- * Käytetään mm. "viikko"/"kuukausi"-aikavälisuodattimissa.
+ * Lasketaan kalenteripäivinä (ei 24 tunnin paloina), jotta tulos on oikein
+ * myös kesä-/talviajan vaihtumisen lähellä, jolloin vuorokaudessa on 23 tai
+ * 25 tuntia.
  */
 function paiviaSittenHelsingissa(paivia, viitehetki = new Date()) {
-    const kohde = new Date(viitehetki.getTime() - paivia * 24 * 60 * 60 * 1000);
-    return tanaanHelsingissa(kohde);
+    const [vuosi, kuukausi, paiva] = tanaanHelsingissa(viitehetki).split("-").map(Number);
+    return new Date(Date.UTC(vuosi, kuukausi - 1, paiva - paivia)).toISOString().slice(0, 10);
+}
+
+/** Eilisen päivämäärä Helsingin aikavyöhykkeellä (YYYY-MM-DD). */
+function eilinenHelsingissa(viitehetki = new Date()) {
+    return paiviaSittenHelsingissa(1, viitehetki);
 }
 
 /**
- * Muotoilee aikaleiman suomalaiseen luettavaan muotoon Helsingin ajassa.
- * Käytetään paikoissa joissa Discordin oma <t:...> ei sovellu (esim. web-
- * dashboard tai lokiviestit).
+ * Helsingin ja UTC:n välinen ero millisekunteina annetulla hetkellä
+ * (+2 h talvella, +3 h kesällä). Luetaan Intl-rajapinnasta, joten kesä-/
+ * talviaika huomioidaan itsestään.
  */
-function muotoileHelsinginAika(aikaleima, { dateStyle = "medium", timeStyle } = {}) {
-    const date = aikaleima instanceof Date ? aikaleima : new Date(aikaleima);
-    if (Number.isNaN(date.getTime())) return "—";
-
-    return new Intl.DateTimeFormat("fi-FI", {
+function helsinginOffsetMs(hetki) {
+    const osat = new Intl.DateTimeFormat("en-US", {
         timeZone: HELSINGIN_AIKAVYOHYKE,
-        dateStyle,
-        ...(timeStyle ? { timeStyle } : {})
-    }).format(date);
-}
-
-/** Kellonaika Helsingissä muodossa HH:MM:SS — esim. dashboardin kelloon. */
-function kelloHelsingissa(viitehetki = new Date()) {
-    return new Intl.DateTimeFormat("fi-FI", {
-        timeZone: HELSINGIN_AIKAVYOHYKE,
+        hourCycle: "h23",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
         hour: "2-digit",
         minute: "2-digit",
-        second: "2-digit",
-        hour12: false
-    }).format(viitehetki);
+        second: "2-digit"
+    }).formatToParts(hetki);
+
+    const arvo = tyyppi => Number(osat.find(osa => osa.type === tyyppi).value);
+    const seinakelloUtcna = Date.UTC(arvo("year"), arvo("month") - 1, arvo("day"), arvo("hour"), arvo("minute"), arvo("second"));
+
+    return seinakelloUtcna - Math.floor(hetki.getTime() / 1000) * 1000;
+}
+
+/**
+ * Helsingin keskiyö (klo 00:00) annetun kalenteripäivän (YYYY-MM-DD) alussa,
+ * epoch-millisekunteina. Korvaa aiemman `new Date(`${pvm}T00:00:00.000Z`)`
+ * -tempun, joka laski päivän alun UTC-keskiyöstä ja siirsi kaikki
+ * komentotilastojen päivärajat 2–3 tuntia väärään kohtaan.
+ */
+function paivanAlkuMs(pvm) {
+    const [vuosi, kuukausi, paiva] = pvm.split("-").map(Number);
+    const utcKeskiyo = Date.UTC(vuosi, kuukausi - 1, paiva);
+
+    // Kaksi kierrosta, jotta kesä-/talviajan vaihtopäivätkin osuvat oikein.
+    let alku = utcKeskiyo - helsinginOffsetMs(new Date(utcKeskiyo));
+    alku = utcKeskiyo - helsinginOffsetMs(new Date(alku));
+
+    return alku;
+}
+
+/** Seuraavan kalenteripäivän (Helsingin keskiyö) alku — eli annetun päivän yläraja (poissulkeva). */
+function paivanLoppuMs(pvm) {
+    const [vuosi, kuukausi, paiva] = pvm.split("-").map(Number);
+    const seuraava = new Date(Date.UTC(vuosi, kuukausi - 1, paiva + 1)).toISOString().slice(0, 10);
+    return paivanAlkuMs(seuraava);
 }
 
 module.exports = {
@@ -70,6 +87,6 @@ module.exports = {
     tanaanHelsingissa,
     eilinenHelsingissa,
     paiviaSittenHelsingissa,
-    muotoileHelsinginAika,
-    kelloHelsingissa
+    paivanAlkuMs,
+    paivanLoppuMs
 };

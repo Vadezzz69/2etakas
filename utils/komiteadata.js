@@ -10,7 +10,59 @@ const RANGAISTUKSET = [
     "Pakollinen ylistyslaulu botille seuraavassa viestissä.",
     "Määrätään palvelimen viralliseksi keksien vartijaksi.",
     "Menettää oikeuden valittaa mistään kolmeen tuntiin.",
-    "Joutuu tunnustamaan julkisesti viimeisimmän kiusallisen hetkensä."
+    "Joutuu tunnustamaan julkisesti viimeisimmän kiusallisen hetkensä.",
+    "Sinut nimitetään 24 tunniksi palvelimen viralliseksi latauspalkiksi. Kukaan ei saa ohittaa sinua.",
+    "Seuraavat kolme viestiä on aloitettava sanoilla: \"Komitea on pettynyt, mutta jatkaa.\"",
+    "Joudut vaihtamaan statukseksi \"odotan järjen saapumista\" seuraavaksi vuorokaudeksi.",
+    "Sinut määrätään pitämään puhe siitä, miksi oma mielipide ei ole automaattisesti fakta.",
+    "Velvollisuus vastata seuraavaan kysymykseen kuin olisit asiakaspalvelun robotti.",
+    "Sinut nimitetään palvelimen viralliseksi varaperunaksi.",
+    "Joudut tekemään yhden (1) julkisen ilmoituksen, jossa myönnät olevasi epäilyttävän keskinkertainen.",
+    "Seuraavan tunnin ajan jokainen väitteesi alkaa: \"Tämä on komitean hyväksymätön mielipide:\"",
+    "Sinut tuomitaan kuuntelemaan omaa selitystäsi uudelleen ja arvioimaan sen uskottavuus.",
+    "Joudut vaihtamaan nimimerkiksi \"Todisteet puuttuvat\" tunniksi.",
+    "Sinun on annettava seuraavalle paikalle saapuvalle henkilölle täysin tarpeeton kunniatitteli.",
+    "Sinut määrätään pyytämään anteeksi yhdeltä satunnaiselta esineeltä.",
+    "Joudut pitämään minuutin hiljaisuuden viimeisimmälle järkevälle ajatuksellesi.",
+    "Seuraava voitto tai onnistuminen on kuitattava lauseella: \"Tämä oli komitean vahinko.\"",
+    "Sinut nimetään kolmeksi tunniksi komitean epäviralliseksi syntipukiksi. Vastuu on kuvitteellinen, maine ei.",
+    "Joudut kirjoittamaan yhden viestin ilman yhtäkään välimerkkiä ja kantamaan seuraukset.",
+    "Sinun on kehuttava omaa suoritustasi kuin selostaisit olympiafinaalia.",
+    "Sinut määrätään toimimaan keskustelun virallisena faktantarkistajana. Tarkistustulos: epäilyttävää.",
+    "Joudut ilmoittamaan seuraavan kerran poistuessasi: \"Operaatio makuulle on käynnissä.\"",
+    "Sinun on nimettävä yksi asia, jossa komitea on oikeassa. Valitse huolellisesti, tämä jää pöytäkirjaan.",
+    "Joudut vastaamaan seuraavaan viestiin pelkällä sanalla \"niin\" ja pitämään siitä kiinni.",
+    "Kaikki viestisi on kirjoitettava seuraavan tunnin ajan kuin olisit uutisankkuri.",
+    "Sinut määrätään ilmoittamaan joka tunti: \"Komitea valvoo, minä tottelen.\" kolmen tunnin ajan.",
+    "Joudut tunnustamaan julkisesti yhden asian, jonka olet tehnyt ja jota kukaan ei ole huomannut.",
+    "Komitea määrää sinut kehumaan jokaista seuraavaa puhujaa vähintään yhdellä adjektiivilla.",
+    "Seuraavan äänikanavalle liittymisen yhteydessä on sanottava: \"Minä olen se, josta puhutaan.\"",
+    "Kielto käyttää emojeita koko päiväksi. Sanat riittävät, ne ovat vain vaikeampia.",
+    "Joudut kirjoittamaan runon komitean kahvinkeittimelle. Vähintään kaksi säkeistöä.",
+    "Joka vitsi, jonka kerrot huomenna, on selitettävä välittömästi perään.",
+    "Joudut vastaamaan jokaiseen kysymykseen seuraavan tunnin ajan toisella kysymyksellä.",
+    "Sinut nimitetään tunnin ajaksi palvelimen virkamieheksi, jonka ainoa tehtävä on sanoa \"selvä\".",
+    "Nimimerkiksesi tulee \"Minä tein sen\" vuorokaudeksi, jos joku kysyy mitään.",
+    "Joudut ilmoittamaan joka kerta kun haukottelet: \"Komitean kokous on pitkästyttävä.\"",
+    "Sinun on annettava seuraavan keskustelun aihe vapaasti komitean valittavaksi.",
+    "Joudut esittelemään oman huoneesi järjestyksen asiantuntijana ja puolustamaan kaaosta.",
+    "Joudut myöntämään, että väittelyssä jota juuri kävit, komitea olisi voittanut.",
+    "Sinut määrätään pitämään päiväkirjaa, jonka ainoa merkintä on: \"Komitea oli oikeassa.\"",
+    "Seuraavien kolmen peli-ilmoituksen yhteydessä on mainittava \"komitean luvalla\".",
+    "Joudut jakamaan yhden hyödyllisen vinkin ja yhden hyödyttömän, ja komitea päättää kumpi on kumpi.",
+    "Sinut määrätään lukemaan käyttöehdot ääneen jonnekin. Äänikanava riittää.",
+    "Joudut pitämään kehuja koskevan puheen kahvinkeittimelle niin, että koko kanava kuulee.",
+    "Pakollinen sanapeli: jokaisen lauseesi on päätyttävä sanaan \"kuulemma\" seuraavan tunnin ajan.",
+    "Komitea ottaa sinun \"viimeisen sanan\" -oikeutesi haltuunsa 12 tunniksi.",
+    "Sinun on pyydettävä anteeksi sille, jota loukkasit vahingossa. Jos et muista kenelle, kaikille.",
+    "Joudut kertomaan seuraavassa äänikanavassa tarinan, jossa et ole sankari.",
+    "Komitea määrää sinut vastaamaan kaikkiin viesteihin sanalla \"ymmärretty\" puolen tunnin ajan.",
+    "Nimimerkkisi korvataan sanalla \"Suunnittelijan virhe\" kahdeksaksi tunniksi.",
+    "Joudut valitsemaan yhden asian, jossa olet huono, ja pitämään siitä ylpeän puheen.",
+    "Sinun on nimettävä kolme asiaa, jotka teit väärin tänään, ja yksi, joka meni vahingossa hyvin.",
+    "Joudut kutsumaan seuraavaa kolmea keskustelukumppania \"arvon komitealaiseksi\".",
+    "Pakollinen kahdeksan sekunnin hiljaisuus ennen seuraavaa vastaustasi, joka on dramaattinen.",
+    "Sinulle määrätään henkilökohtainen yksilövalvoja: kahvikuppi, joka katsoo sinua pöydältä.",
 ];
 
 const SAKKO_YKSIKOT = [
@@ -21,7 +73,19 @@ const SAKKO_YKSIKOT = [
     "vanhaa meemiä",
     "kappaletta hopeisia nappeja",
     "tuntia pakkosiivousta",
-    "kertaa \"anteeksi\" sanomista ääneen"
+    "kertaa \"anteeksi\" sanomista ääneen",
+    "tyhjää Monster-tölkkiä",
+    "viikon vanhaa pizzaa",
+    "sekuntia komitean sääliä",
+    "kiusallista kuvakaappausta",
+    "metriä sotkuista johtoa",
+    "turhaa ilmoitusta",
+    "tuntia latauspalkin tuijottamista",
+    "komitean arpalippua",
+    "kuviteltua mansikkaa",
+    "pientä pettymystä",
+    "kertaa pakollista kiitosta",
+    "sulkeutunutta Discord-välilehteä",
 ];
 
 const RIKOKSET = [
@@ -34,37 +98,41 @@ const RIKOKSET = [
     "Epäilyttävän hiljainen käytös kokouksen aikana",
     "Toistuva myöhästely äänikanavalta",
     "Kaavan luvaton muuttaminen ilman komitean hyväksyntää",
-    "Liiallinen GIF-kuvien käyttö vakavassa keskustelussa"
+    "Liiallinen GIF-kuvien käyttö vakavassa keskustelussa",
+    "Kahvikupin varastaminen komitean omasta pöydästä",
+    "Luvaton nyökkäys vakavan asian aikana",
+    "Pitkittynyt \"ihan kohta\" -vaihe ilman edistymistä",
+    "Epäilyttävä innostus maanantaiaamuna",
+    "Energiajuomatölkin murskaaminen tarpeettoman näyttävästi",
+    "Päällekkäispuhuminen äänikanavalla kolmatta kertaa peräkkäin",
+    "Salainen jääkaapin tarkastus keskiyöllä",
+    "Rikollinen määrä selityksiä suhteessa tekoihin",
+    "Pelin lopettaminen kesken ottelun ilman ilmoitusta",
+    "Toisen ihmisen sanojen toistaminen paremmalla äänenpainolla",
+    "Vahingossa julkinen kuvakaappaus yksityisestä keskustelusta",
+    "Valheellinen väite \"olen ajoissa\"",
+    "Leivänkannikan anastus",
+    "Sohvalla horisontaalinen oleskelu virka-aikana",
+    "Hiljaisuuden rikkominen väärällä hetkellä",
+    "Salaisen keksivaraston perustaminen",
+    "Viimeisen kierroksen luvaton ylittäminen",
+    "Omavaltainen musiikin vaihtaminen yhteisellä kanavalla",
+    "Dramaattinen kolmen sekunnin hiljaisuus lauseen keskellä",
+    "Häiriköinti pelilatausruudun aikana",
+    "Jääkaapin oven jättäminen raolleen",
+    "Hyödytön mutta äänekäs kommentti kriittisellä hetkellä",
+    "Ruudunjaon aloittaminen ilman varoitusta",
+    "Aavistuksen liian itsevarma kysymys",
+    "Kirjautumisen jatkuva laiminlyönti",
+    "Perusteeton hymyily tärkeän keskustelun aikana",
+    "Pelaajan luvaton katoaminen kesken kierroksen",
+    "Tahaton mutta toistuva \"ei kai se haittaa?\" -kysely",
+    "Tuoleilla pyörimisen vakava väärinkäyttö",
+    "Laiton lataustilan tarkistus kolmen minuutin välein",
 ];
-
-const ONKO_KOMMENTIT_KYLLA = [
-    "Todisteet viittaavat vahvasti tähän suuntaan.",
-    "Komitea on samaa mieltä.",
-    "Ei epäilystäkään.",
-    "Silminnäkijät vahvistavat."
-];
-
-const ONKO_KOMMENTIT_EI = [
-    "Ei todisteita löytynyt.",
-    "Komitea kiistää tämän jyrkästi.",
-    "Erittäin epätodennäköistä.",
-    "Kaikki todisteet viittaavat päinvastaiseen."
-];
-
-function satunnainen(lista) {
-    return lista[Math.floor(Math.random() * lista.length)];
-}
-
-function satunnaisVali(min, max) {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-}
 
 module.exports = {
     RANGAISTUKSET,
     SAKKO_YKSIKOT,
-    RIKOKSET,
-    ONKO_KOMMENTIT_KYLLA,
-    ONKO_KOMMENTIT_EI,
-    satunnainen,
-    satunnaisVali
+    RIKOKSET
 };

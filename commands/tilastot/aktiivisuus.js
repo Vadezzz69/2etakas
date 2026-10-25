@@ -19,7 +19,7 @@ module.exports = {
         const roast = analyzeRoastFromStats(analysis.roastContext);
 
         const embed = stats({
-            title: `📊 ${user.username}n aktiivisuus tänään`,
+            title: `📊 Aktiivisuus tänään — ${user.username}`,
             thumbnail: user.displayAvatarURL(),
             description: analysis.summary,
             fields: [

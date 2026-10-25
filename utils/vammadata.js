@@ -1,4 +1,5 @@
 const { run, get, all } = require("./db");
+const { satunnainen } = require("./satunnainen");
 
 const HAUSKAT_KOMMENTIT = [
     "Ai että osaa olla kömpelö! 🤕",
@@ -10,7 +11,21 @@ const HAUSKAT_KOMMENTIT = [
     "Legenda kasvaa jälleen.",
     "Ensiapuasema soittaa jo tervetuliaissoiton.",
     "Fysioterapeutti tienaa taas kunnon palkan.",
-    "Darwin-palkinto siintää horisontissa."
+    "Darwin-palkinto siintää horisontissa.",
+    "Tämä kirjataan komitean rohkeimpien tapausten joukkoon.",
+    "Pehmuste olisi ollut hyvä idea. Se on edelleen hyvä idea.",
+    "Kaatuminen oli tyylikäs, laskeutuminen vähemmän.",
+    "Sairaanhoitaja nosti kulmakarvaansa. Vain toista.",
+    "Painovoima voitti jälleen. Painovoima johtaa 412–0.",
+    "Komitea suosittelee, että katsot seuraavalla kerralla eteesi. Tai alas. Tai ylös.",
+    "Ensiapupakkaus ehti avautua ennen kuin kukaan tiesi mitä oli tapahtunut.",
+    "Myötätunto on aitoa, nauru vielä aidompaa.",
+    "Ruumiinosat ovat yhä paikoillaan. Ylpeys on tilanteesta riippuvainen.",
+    "Hyvä tarina. Hieman kallis, mutta hyvä.",
+    "Komitea lähettää parantavia ajatuksia ja rajoitetun määrän pilkkaa.",
+    "Kolhu on kirjattu. Kolhun tarina odottaa illallista.",
+    "Tilastoihin tulee uusi merkintä ja uusi legenda.",
+    "Onneksi tämä ei ollut elokuvassa, koska se olisi ollut pidempi.",
 ];
 
 const TITTELIT = [
@@ -28,7 +43,7 @@ function arvonimi(count) {
 }
 
 function satunnainenKommentti() {
-    return HAUSKAT_KOMMENTIT[Math.floor(Math.random() * HAUSKAT_KOMMENTIT.length)];
+    return satunnainen(HAUSKAT_KOMMENTIT);
 }
 
 // =====================================================

@@ -18,6 +18,9 @@ const KATEGORIA_OTSIKOT = {
 // (1000) jotta emojit/erikoismerkit eivät koskaan ylitä rajaa vahingossa.
 const KENTAN_MAKSIMIPITUUS = 1000;
 
+// Embedin tekstit yhteensä max 6000 merkkiä. Jätetään varaa otsikolle ja alatunnisteelle.
+const EMBEDIN_TEKSTIRAJA = 5400;
+
 /**
  * Jakaa komentorivit useaan kenttään jos yhteispituus ylittäisi Discordin
  * rajan. Yhdenkin kategorian komentomäärä voi kasvaa ajan myötä, joten
@@ -63,21 +66,45 @@ module.exports = {
             ryhmat.get(kategoria).push(cmd);
         }
 
-        const embed = new EmbedBuilder()
-            .setColor(VARIT.PERUS)
-            .setTitle("📖 Komiteanvakoojabotin komennot")
-            .setFooter({ text: `${BRANDI.FOOTER_ICON} ${BRANDI.FOOTER_TEKSTI}` });
+        const kentat = [];
 
         for (const [kategoria, komennot] of ryhmat) {
-
             const rivit = komennot.map(cmd => `\`/${cmd.data.name}\` — ${cmd.data.description}`);
             const otsikko = KATEGORIA_OTSIKOT[kategoria] ?? kategoria;
-
-            embed.addFields(...pilkoKentiksi(otsikko, rivit));
-
+            kentat.push(...pilkoKentiksi(otsikko, rivit));
         }
 
-        await interaction.reply({ embeds: [embed] });
+        // Discordin rajat: yhden embedin tekstit yhteensä max 6000 merkkiä ja
+        // 25 kenttää. Kun komentoja tulee lisää, lista jatkuu seuraavaan
+        // embediin sen sijaan että /help kaatuisi.
+        const embedit = [];
+        let nykyinen = [];
+        let pituus = 0;
+
+        for (const kentta of kentat) {
+            const koko = kentta.name.length + kentta.value.length;
+            if (nykyinen.length && (pituus + koko > EMBEDIN_TEKSTIRAJA || nykyinen.length >= 25)) {
+                embedit.push(nykyinen);
+                nykyinen = [];
+                pituus = 0;
+            }
+            nykyinen.push(kentta);
+            pituus += koko;
+        }
+        if (nykyinen.length) embedit.push(nykyinen);
+
+        const viesti = embedit.map((kentatTassa, i) => {
+            const embed = new EmbedBuilder()
+                .setColor(VARIT.PERUS)
+                .addFields(...kentatTassa);
+
+            if (i === 0) embed.setTitle("📖 Komiteanvakoojabotin komennot");
+            if (i === embedit.length - 1) embed.setFooter({ text: `${BRANDI.FOOTER_ICON} ${BRANDI.FOOTER_TEKSTI}` });
+
+            return embed;
+        });
+
+        await interaction.reply({ embeds: viesti });
 
     }
 };

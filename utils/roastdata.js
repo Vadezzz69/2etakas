@@ -1,3 +1,5 @@
+const { satunnainen } = require("./satunnainen");
+
 // Tilastopohjaiset roast-linjat — valitaan käyttäjän oikean datan perusteella,
 // ei täysin satunnaisesti. Pidetään absurdin humoristisina, ei aidosti ilkeinä.
 
@@ -5,27 +7,43 @@ const ROAST_VAHAN_VIESTEJA = [
     "Kohde on niin hiljainen, että komitea epäilee tekoälyä tai kadonnutta näppäimistöä.",
     "Aktiivisuustaso: haamu. Nähty profiilikuvasta, muttei koskaan viesteistä.",
     "Komitea harkitsee kateeliseksi julistamista puuttuvan osallistumisen vuoksi.",
-    "Tämä tili on joko erittäin viisas tai unohtanut palvelimen olemassaolon kokonaan."
+    "Tämä tili on joko erittäin viisas tai unohtanut palvelimen olemassaolon kokonaan.",
+    "Viestimäärä on niin alhainen, että komitea epäilee kohteen olevan kuvitteellinen.",
+    "Kohde on kirjoittanut vähemmän kuin kahvinkeittimen käyttöohje.",
+    "Hiljaisuus on kultaa, mutta tämä on jo platinaa. Tai kuollutta.",
+    "Komitea on alkanut seurata tätä tiliä kuin tosi-tv:tä, jossa ei tapahdu mitään.",
 ];
 
 const ROAST_PALJON_VIESTEJA = [
     "Viestimäärä viittaa vakavaan riippuvuuteen tästä palvelimesta.",
     "Kohde on kirjaimellisesti palvelimen selkäranka. Tai sitten ei vain ole muuta tekemistä.",
     "Komitea suosittelee lyhyttä taukoa. Ehkä käy ulkona joskus.",
-    "Tällä aktiivisuudella kohde ansaitsisi jo oman toimiston täältä ja eläkevakuutuksen."
+    "Tällä aktiivisuudella kohde ansaitsisi jo oman toimiston täältä ja eläkevakuutuksen.",
+    "Kohde kirjoittaa niin paljon, että komitea harkitsee lisäpalkkaa arkistonhoitajalle.",
+    "Viestimäärä on ylittänyt kaikki järkevät rajat ja jatkaa matkaa.",
+    "Jos viestit olisivat rahaa, kohde olisi jo maksanut komitean sakot.",
+    "Kohteen näppäimistö on pyytänyt siirtoa toiseen taloon.",
 ];
 
 const ROAST_PALJON_AANTA = [
     "Kohde asuu käytännössä äänikanavalla. Postiosoitekin pitäisi vaihtaa sinne.",
     "Äänikanava-aika viittaa siihen, ettei kohteella ole muuta elämää. Komitea ymmärtää täysin.",
     "Mikrofoni on luultavasti jo hitsautunut kiinni kohteen käteen tässä vaiheessa.",
-    "Kohteen äänikanava-aika ylittää useimpien ihmisten unimäärän. Huolestuttavaa omistautumista."
+    "Kohteen äänikanava-aika ylittää useimpien ihmisten unimäärän. Huolestuttavaa omistautumista.",
+    "Kohde oli äänikanavalla niin kauan, että komitea tarjosi jo vuokrasopimusta.",
+    "Äänikanavan tuolit tuntevat kohteen etunimeltä.",
+    "Tällä tuntimäärällä kohde olisi voinut oppia soittamaan sellon. Ei oppinut.",
+    "Kohteen mikrofoni on paikalla jo ennen kuin kohde saapuu.",
 ];
 
 const ROAST_EI_AANTA = [
     "Kohde ei ole koskaan käynyt äänikanavalla. Joko ujo tai erittäin ammattimainen agentti.",
     "Ääneton kohde. Komitea epäilee joko mykkyyttä tai vakavaa introverttiyttä.",
-    "Nolla sekuntia äänikanavalla. Epäilyttävän täydellinen peittotarina."
+    "Nolla sekuntia äänikanavalla. Epäilyttävän täydellinen peittotarina.",
+    "Kohde ei ole käynyt äänikanavalla. Komitea ei ole varma onko hän pelkuri vai viisas.",
+    "Nolla minuuttia äänikanavalla. Joko erakko tai agentti. Molemmat kunnioitettavia.",
+    "Äänikanavalla ei ole nähty. Komitea epäilee, että hän vain kuuntelee ovelta.",
+    "Kohteen ääntä ei ole kuultu. Se on joko rauhoittava tai pelottava tieto.",
 ];
 
 const ROAST_YLEINEN = [
@@ -34,7 +52,12 @@ const ROAST_YLEINEN = [
     "Uhkatasoarvio on korkeampi kuin komitea haluaisi julkisesti myöntää.",
     "Kohde on virallisesti merkitty komitean 'pidä silmällä' -listalle.",
     "Tarkkailu jatkuu toistaiseksi. Kohde ei tiennyt olevansa seurattu ennen tätä.",
-    "Komitean arkistojen mukaan tämä ei ole ensimmäinen kerta kun kohteesta kysytään."
+    "Komitean arkistojen mukaan tämä ei ole ensimmäinen kerta kun kohteesta kysytään.",
+    "Komitea tallentaa kaiken. Silloinkin kun se ei kuulosta tallentamiselta.",
+    "Kaikki on kirjattu, ja kirjaukset on kirjattu kirjauksiin.",
+    "Komitean muistiinpanot kasvavat. Sinun kansiosi kasvaa nopeammin.",
+    "Tämä tapaus saa oman kansion. Kansion nimi on häpeä.",
+    "Komitea muistuttaa: ruutuaika on tilastoitu, eikä tilasto ole imarteleva.",
 ];
 
 // Kun tutka käännetään takaisin komennon käyttäjään itseensä.
@@ -44,12 +67,20 @@ const ITSE_KAANNOS_KOMMENTIT = [
     "🔄 Komitea päätti, ettei kukaan muu ole yhtä epäilyttävä kuin sinä juuri nyt.",
     "🔄 Miksi kyselet muista, kun oma tilastosi odottaa tutkintaa? Tässä se on, halusit tai et.",
     "🔄 Kohde vaihdettiin viime hetkellä. Komitea uskoo sinun ansaitsevan tämän enemmän.",
-    "🔄 Ironista — juuri sinä kyselet tätä, kun sinulla on eniten selittämistä koko palvelimella."
+    "🔄 Ironista — juuri sinä kyselet tätä, kun sinulla on eniten selittämistä koko palvelimella.",
+    "🔄 Tutka kääntyi. Syy: komitea huomasi, että katsoit liian innokkaasti.",
+    "🔄 Käänsimme kohteen. Kohde on nyt sinä. Ilmoita kaikki valituksesi itsellesi.",
+    "🔄 Komitea tarkisti taustat ja päätti, että tärkeämpi kohde istuu näppäimistön ääressä.",
+    "🔄 Kysymys: kuka tarkkailee tarkkailijaa? Vastaus: me, ja se olet sinä.",
+    "🔄 Komitea havaitsi ristiriidan ja ratkaisi sen osoittamalla sinua.",
+    "🔄 Peruutus, kohde vaihdettu: syy \"mielenkiintoisempi\". Se olet sinä.",
+    "🔄 Kohdetta ei voitu tavoittaa, joten otimme sinut. Hyödynnä tilaisuus.",
+    "🔄 Salainen sääntö 17: kysyjä on aina myös kohde. Tämä oli sääntö 17.",
+    "🔄 Yritys ohjata huomio muualle havaittiin ja torjuttiin. Huomio ohjattiin takaisin sinuun.",
+    "🔄 Komitea ei ole kiinnostunut muista. Se on kiinnostunut sinusta. Aina.",
+    "🔄 Oho. Tähtäin vaihtoi suuntaa. Katso peiliin, siellä se on.",
+    "🔄 Kohdistus korjattu: kohteena sinä, tarkoituksena hauskuus, lopputuloksena pieni nolous.",
 ];
-
-function satunnainen(lista) {
-    return lista[Math.floor(Math.random() * lista.length)];
-}
 
 function valitseRoast({ viestitYhteensa, aaniSekunnitYhteensa }) {
     const linjat = [];
@@ -65,64 +96,4 @@ function valitseRoast({ viestitYhteensa, aaniSekunnitYhteensa }) {
     return satunnainen(linjat);
 }
 
-// =====================================================
-// LAAJA "AI-ROAST" — /roast-komentoa varten.
-// Yhdistää useamman datapisteen yhtä aikaa yhdeksi
-// moniosaiseksi, "tekoälyavusteiselta" vaikuttavalta roastilta.
-// Rule-based, ei oikeaa LLM-kutsua — mutta rakennettu niin että
-// jokainen kohde saa juuri omaan dataansa sopivan tuloksen.
-// =====================================================
-
-function laajaRoast({
-    viestitYhteensa = 0,
-    aaniSekunnitYhteensa = 0,
-    komentojaYhteensa = 0,
-    syyllisyysprosentti = 0,
-    onEpailty = false,
-    tuomioita = 0
-}) {
-
-    const havainnot = [];
-
-    if (viestitYhteensa === 0) {
-        havainnot.push("Kohde ei ole kirjoittanut yhtään viestiä koko historian aikana. Joko botti tai valistunut mykkä.");
-    } else if (viestitYhteensa < 10) {
-        havainnot.push(satunnainen(ROAST_VAHAN_VIESTEJA));
-    } else if (viestitYhteensa > 300) {
-        havainnot.push(satunnainen(ROAST_PALJON_VIESTEJA));
-    }
-
-    if (aaniSekunnitYhteensa === 0) {
-        havainnot.push(satunnainen(ROAST_EI_AANTA));
-    } else if (aaniSekunnitYhteensa > 3600 * 5) {
-        havainnot.push(satunnainen(ROAST_PALJON_AANTA));
-    }
-
-    if (komentojaYhteensa > 100) {
-        havainnot.push("Komentojen käyttömäärä viittaa siihen, ettei kohteella ole enää mitään elämää tämän botin ulkopuolella.");
-    } else if (komentojaYhteensa === 0) {
-        havainnot.push("Kohde ei ole koskaan käyttänyt yhtäkään komentoa. Epäilyttävän varovaista.");
-    }
-
-    if (syyllisyysprosentti > 70) {
-        havainnot.push(`Syyllisyysprosentti ${syyllisyysprosentti}% on niin korkea, että komitea harkitsee jo oman selliosaston perustamista.`);
-    } else if (syyllisyysprosentti === 0) {
-        havainnot.push("Syyllisyysprosentti on tasan 0%. Joko täysin viaton, tai erittäin taitava peittelemään jälkensä.");
-    }
-
-    if (onEpailty) {
-        havainnot.push("Kohde on jo valmiiksi komitean epäiltyjen listalla. Tämä ei tullut yllätyksenä kenellekään.");
-    }
-
-    if (tuomioita > 3) {
-        havainnot.push(`${tuomioita} aiempaa tuomiota puhuu puolestaan — tämä ei ole ensikertalainen.`);
-    }
-
-    havainnot.push(...ROAST_YLEINEN.slice(0, 1).map(l => satunnainen(ROAST_YLEINEN)));
-
-    // Poistetaan mahdolliset duplikaatit ja rajataan pituus siedettäväksi.
-    return [...new Set(havainnot)].slice(0, 4);
-
-}
-
-module.exports = { valitseRoast, laajaRoast, satunnainen, ITSE_KAANNOS_KOMMENTIT };
+module.exports = { valitseRoast, ITSE_KAANNOS_KOMMENTIT };

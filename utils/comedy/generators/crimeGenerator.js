@@ -11,7 +11,9 @@ function generoiRikoslause() {
 
 /** N eri rikoslausetta ilman toistoa peruslauseiden tasolla. */
 function generoiRikoslauseet(maara) {
-    const rikokset = satunnaisetMonta(RIKOKSET, maara).map(taytaLukuPaikanvaraaja);
+    // Huom: .map(taytaLukuPaikanvaraaja) välittäisi indeksin ja taulukon funktion
+    // min/max-parametreiksi ja tuottaisi tekstiin "NaN" — siksi eksplisiittinen kutsu.
+    const rikokset = satunnaisetMonta(RIKOKSET, maara).map(rikos => taytaLukuPaikanvaraaja(rikos));
     return rikokset.map(rikos => `${satunnainen(TODISTUSETULIITTEET)} ${rikos}.`);
 }
 

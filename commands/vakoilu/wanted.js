@@ -1,8 +1,10 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const { hashKoodinimi } = require("../../utils/vakoiludata");
-const { RIKOKSET, satunnainen, satunnaisVali } = require("../../utils/komiteadata");
+const { RIKOKSET } = require("../../utils/komiteadata");
+const { satunnainen, satunnaisVali } = require("../../utils/satunnainen");
 const { VARIT } = require("../../utils/tyyli");
 const { ehkaKaannaKutsujaksi } = require("../../utils/trolli");
+const { tayta, WANTED_OTSIKOT, WANTED_PALKKIOT, WANTED_FOOTERIT } = require("../../utils/comedy/data/viestit");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -23,16 +25,16 @@ module.exports = {
 
         const embed = new EmbedBuilder()
             .setColor(VARIT.PERUS)
-            .setTitle("🚨 ETSINTÄKUULUTUS 🚨")
+            .setTitle(satunnainen(WANTED_OTSIKOT))
             .setThumbnail(kohde.displayAvatarURL())
             .setDescription(
                 (kaannetty ? `${kommentti}\n\n` : "") +
                 `**Nimi:** ${kohde.username}\n` +
                 `**Koodinimi:** "${koodinimi}"\n` +
                 `**Epäilty rikos:** ${rikos}\n\n` +
-                `💰 **Palkkio:** ${palkkio} komitea-kolikkoa (elävänä tai — mieluummin — kahvikupposen kanssa)`
+                tayta(satunnainen(WANTED_PALKKIOT), { summa: palkkio })
             )
-            .setFooter({ text: "Vihjeet vastaanotetaan mielellään yksityisviestillä komitealle." });
+            .setFooter({ text: satunnainen(WANTED_FOOTERIT) });
 
         await interaction.reply({ embeds: [embed] });
 

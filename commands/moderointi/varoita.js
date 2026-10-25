@@ -10,7 +10,7 @@ module.exports = {
             option.setName("kayttaja").setDescription("Varoitettava käyttäjä").setRequired(true)
         )
         .addStringOption(option =>
-            option.setName("syy").setDescription("Varoituksen syy").setRequired(true)
+            option.setName("syy").setDescription("Varoituksen syy").setRequired(true).setMaxLength(500)
         )
         .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers),
 

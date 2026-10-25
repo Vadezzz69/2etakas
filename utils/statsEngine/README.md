@@ -37,7 +37,7 @@ without a second database round-trip.
 - `risk.js` — risk score, percent, and level (`low | medium | high`), driven
   by fines and investigation counts. `RISK_HIGH_THRESHOLD` /
   `RISK_MEDIUM_THRESHOLD` are the named cutoffs.
-- `opinion.js` — a one-line, deterministic "Committee opinion" derived from
+- `opinion.js` — a one-line "Committee opinion" (meaning fixed by the risk/activity pair, wording drawn from a few variants) derived from
   the risk/activity combination — distinct from `summary` (a data recap) and
   from the Roast Engine's paragraph (which explains *why*).
 - `observations.js` — neutral, factual bullet points (not commentary),

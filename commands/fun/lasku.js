@@ -1,6 +1,8 @@
 const { SlashCommandBuilder } = require("discord.js");
 const { report } = require("../../utils/ui");
 const { generoiLasku } = require("../../utils/comedy");
+const { satunnainen } = require("../../utils/satunnainen");
+const { LASKU_FOOTERIT } = require("../../utils/comedy/data/viestit");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -24,7 +26,7 @@ module.exports = {
                 { name: "Laskutettavat erät", value: rivit },
                 { name: "Yhteensä", value: `**${lasku.yhteensa} ${lasku.yksikko}**` }
             ],
-            footer: "Eräpäivä: heti. Maksutapoja ei ole."
+            footer: satunnainen(LASKU_FOOTERIT)
         });
 
         await interaction.reply({ embeds: [embed] });

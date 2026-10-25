@@ -1,6 +1,8 @@
 const { SlashCommandBuilder } = require("discord.js");
 const { info } = require("../../utils/ui");
 const { generoiTiedote } = require("../../utils/comedy");
+const { satunnainen } = require("../../utils/satunnainen");
+const { TIEDOTE_OTSIKOT } = require("../../utils/comedy/data/viestit");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -10,7 +12,7 @@ module.exports = {
     async execute(interaction) {
 
         const embed = info({
-            title: "📢 Komitean tiedote",
+            title: satunnainen(TIEDOTE_OTSIKOT),
             description: generoiTiedote()
         });
 

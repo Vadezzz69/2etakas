@@ -10,6 +10,8 @@ const {
     kirjaaTuomio
 } = require("../../utils/tutkintadata");
 const { VARIT } = require("../../utils/tyyli");
+const { satunnainen } = require("../../utils/satunnainen");
+const { TUTKINTA_TYHJA } = require("../../utils/comedy/data/viestit");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -20,21 +22,21 @@ module.exports = {
                 .setName("aloita")
                 .setDescription("Avaa uuden tutkinnan käyttäjää vastaan.")
                 .addUserOption(o => o.setName("kayttaja").setDescription("Tutkittava").setRequired(true))
-                .addStringOption(o => o.setName("otsikko").setDescription("Tutkinnan aihe").setRequired(true))
+                .addStringOption(o => o.setName("otsikko").setDescription("Tutkinnan aihe").setRequired(true).setMaxLength(200))
         )
         .addSubcommand(sub =>
             sub
                 .setName("todiste")
                 .setDescription("Lisää todisteen avoimeen tutkintaan.")
                 .addIntegerOption(o => o.setName("tunnus").setDescription("Tutkinnan numero (#)").setRequired(true))
-                .addStringOption(o => o.setName("todiste").setDescription("Todisteen sisältö").setRequired(true))
+                .addStringOption(o => o.setName("todiste").setDescription("Todisteen sisältö").setRequired(true).setMaxLength(500))
         )
         .addSubcommand(sub =>
             sub
                 .setName("sulje")
                 .setDescription("Sulkee tutkinnan ja antaa lopullisen tuomion.")
                 .addIntegerOption(o => o.setName("tunnus").setDescription("Tutkinnan numero (#)").setRequired(true))
-                .addStringOption(o => o.setName("tuomio").setDescription("Lopullinen tuomio").setRequired(true))
+                .addStringOption(o => o.setName("tuomio").setDescription("Lopullinen tuomio").setRequired(true).setMaxLength(500))
         )
         .addSubcommand(sub =>
             sub
@@ -129,7 +131,7 @@ module.exports = {
             const avoimet = await haeAvoimetTutkinnat(interaction.guildId);
 
             if (!avoimet.length) {
-                return interaction.reply("Ei avoimia tutkintoja tällä hetkellä. Kaikki on hiljaista... liian hiljaista.");
+                return interaction.reply(satunnainen(TUTKINTA_TYHJA));
             }
 
             const embed = new EmbedBuilder()

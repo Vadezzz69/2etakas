@@ -6,7 +6,7 @@ module.exports = {
         .setName("lukitse")
         .setDescription("Lukitsee nykyisen kanavan — @everyone ei voi enää lähettää viestejä.")
         .addStringOption(option =>
-            option.setName("syy").setDescription("Syy lukitukselle").setRequired(false)
+            option.setName("syy").setDescription("Syy lukitukselle").setRequired(false).setMaxLength(300)
         )
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
 

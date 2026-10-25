@@ -1,5 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const { VARIT } = require("../../utils/tyyli");
+const { satunnainen } = require("../../utils/satunnainen");
+const { MEEMI_EI_LOYTYNYT, MEEMI_VIRHE } = require("../../utils/comedy/data/viestit");
 
 // Rajataan turvallisiin, yleisesti tunnettuihin meemi-subreddiiteihin.
 const LAHTEET = "memes+wholesomememes+ProgrammerHumor+me_irl";
@@ -31,7 +33,7 @@ module.exports = {
             }
 
             if (!data || data.nsfw) {
-                return interaction.editReply("Löytyi juuri nyt vain kyseenalaisia meemejä. Yritä hetken päästä uudelleen.");
+                return interaction.editReply(satunnainen(MEEMI_EI_LOYTYNYT));
             }
 
             const embed = new EmbedBuilder()
@@ -46,8 +48,8 @@ module.exports = {
 
         } catch (err) {
 
-            console.error("❌ Meemin haku epäonnistui:", err);
-            await interaction.editReply("Meemien haku epäonnistui juuri nyt (API saattaa olla alhaalla). Yritä hetken päästä uudelleen.");
+            console.error("❌ Meemin haku epäonnistui:", err?.message ?? err);
+            await interaction.editReply(satunnainen(MEEMI_VIRHE));
 
         }
 

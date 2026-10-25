@@ -1,17 +1,18 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
-const { satunnaisVali } = require("../../utils/komiteadata");
-const { VARIT } = require("../../utils/tyyli");
+const { satunnainen, satunnaisVali } = require("../../utils/satunnainen");
+const { VARIT, palkki } = require("../../utils/tyyli");
+const { SUS_OTSIKOT, SUS_KOMMENTIT, SUS_ERIKOISET, SUS_FOOTERIT } = require("../../utils/comedy/data/viestit");
 
-function palkki(prosentti) {
-    const tayta = Math.round(prosentti / 10);
-    return "🟥".repeat(tayta) + "⬜".repeat(10 - tayta);
-}
+const SUS_PALKKI = { taytto: "🟥", tyhja: "⬜" };
 
+// Raja-arvot ovat ennallaan (<20, <50, <80, muuten kriittinen). Tasan 0, 42, 69
+// ja 100 saavat lisäksi oman erikoiskommenttinsa.
 function kommentti(prosentti) {
-    if (prosentti < 20) return "Puhtaampi kuin komitean pöytäkirja.";
-    if (prosentti < 50) return "Vähän epäilyttävää, mutta ei mitään hälyttävää.";
-    if (prosentti < 80) return "Komitea pitää silmällä.";
-    return "Erittäin epäilyttävää. Suositellaan välitöntä valvontaa.";
+    if (SUS_ERIKOISET[prosentti]) return SUS_ERIKOISET[prosentti];
+    if (prosentti < 20) return satunnainen(SUS_KOMMENTIT.matala);
+    if (prosentti < 50) return satunnainen(SUS_KOMMENTIT.keski);
+    if (prosentti < 80) return satunnainen(SUS_KOMMENTIT.korkea);
+    return satunnainen(SUS_KOMMENTIT.kriittinen);
 }
 
 module.exports = {
@@ -29,12 +30,13 @@ module.exports = {
 
         const embed = new EmbedBuilder()
             .setColor(prosentti > 70 ? VARIT.AKSENTTI : prosentti > 40 ? VARIT.HARMAA : VARIT.PERUS)
-            .setTitle("🔍 Epäilymittari")
+            .setTitle(satunnainen(SUS_OTSIKOT))
             .setDescription(
                 `${kayttaja}\n\n` +
-                `${palkki(prosentti)}  **${prosentti}%**\n\n` +
+                `${palkki(prosentti, 10, SUS_PALKKI)}  **${prosentti}%**\n\n` +
                 `*${kommentti(prosentti)}*`
-            );
+            )
+            .setFooter({ text: satunnainen(SUS_FOOTERIT) });
 
         await interaction.reply({ embeds: [embed] });
 

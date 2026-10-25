@@ -1,24 +1,4 @@
-function satunnainen(lista) {
-    return lista[Math.floor(Math.random() * lista.length)];
-}
-
-function satunnaisVali(min, max) {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-/** Poimii n uniikkia alkiota listasta ilman toistoa (tai koko listan jos n >= listan pituus). */
-function satunnaisetMonta(lista, n) {
-    const kopio = [...lista];
-    const tulos = [];
-    const maara = Math.min(n, kopio.length);
-
-    for (let i = 0; i < maara; i++) {
-        const indeksi = Math.floor(Math.random() * kopio.length);
-        tulos.push(kopio.splice(indeksi, 1)[0]);
-    }
-
-    return tulos;
-}
+const { satunnainen, satunnaisVali, satunnaisetMonta } = require("../../satunnainen");
 
 /** Korvaa "{n}"-paikanvaraajan satunnaisella luvulla (oletusväli 2-20). */
 function taytaLukuPaikanvaraaja(teksti, min = 2, max = 20) {
@@ -27,7 +7,7 @@ function taytaLukuPaikanvaraaja(teksti, min = 2, max = 20) {
 
 /**
  * Deterministinen "päivän" indeksi listaan — sama päivä (Helsingin ajassa)
- * antaa aina saman tuloksen, jotta esim. /paivanrikos ei vaihdu joka
+ * antaa aina saman tuloksen, jotta esim. /paiva ei vaihdu joka
  * kutsulla. Käyttää yksinkertaista merkkijonohajautusta siemenenä.
  */
 function paivanIndeksi(pvm, listanPituus) {

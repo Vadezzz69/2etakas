@@ -14,6 +14,14 @@ const {
     kirjaaTuomio
 } = require("../../utils/tutkintadata");
 const { VARIT } = require("../../utils/tyyli");
+const { satunnainen } = require("../../utils/satunnainen");
+const {
+    tayta,
+    AANESTYS_EI_AANIA,
+    AANESTYS_SYYLLINEN,
+    AANESTYS_VIATON,
+    AANESTYS_TASAPELI
+} = require("../../utils/comedy/data/viestit");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -23,7 +31,7 @@ module.exports = {
             option.setName("kayttaja").setDescription("Kenestä äänestetään").setRequired(true)
         )
         .addStringOption(option =>
-            option.setName("kysymys").setDescription("Mistä äänestetään").setRequired(false)
+            option.setName("kysymys").setDescription("Mistä äänestetään").setRequired(false).setMaxLength(200)
         )
         .addIntegerOption(option =>
             option
@@ -63,24 +71,36 @@ module.exports = {
 
         const kerays = viesti.createMessageComponentCollector({ time: kestoSekuntia * 1000 });
 
+        // Tapahtumankäsittelijän virhe ei saa päätyä käsittelemättömäksi Promise-virheeksi.
         kerays.on("collect", async (napinPainaja) => {
 
-            const valinta = napinPainaja.customId.startsWith("aanestys_syyllinen_") ? "syyllinen" : "viaton";
+            try {
 
-            await annaAani(voteId, napinPainaja.user.id, valinta);
+                const valinta = napinPainaja.customId.startsWith("aanestys_syyllinen_") ? "syyllinen" : "viaton";
 
-            const tulokset = await haeAanestysTulos(voteId);
-            const syyllisia = tulokset.find(t => t.choice === "syyllinen")?.maara ?? 0;
-            const viattomia = tulokset.find(t => t.choice === "viaton")?.maara ?? 0;
+                await annaAani(voteId, napinPainaja.user.id, valinta);
 
-            await napinPainaja.reply({
-                content: `Äänesi (**${valinta}**) rekisteröitiin. Tilanne juuri nyt: ⚖️ ${syyllisia} — 🕊️ ${viattomia}`,
-                ephemeral: true
-            });
+                const tulokset = await haeAanestysTulos(voteId);
+                const syyllisia = tulokset.find(t => t.choice === "syyllinen")?.maara ?? 0;
+                const viattomia = tulokset.find(t => t.choice === "viaton")?.maara ?? 0;
+
+                await napinPainaja.reply({
+                    content: `Äänesi (**${valinta}**) rekisteröitiin. Tilanne juuri nyt: ⚖️ ${syyllisia} — 🕊️ ${viattomia}`,
+                    ephemeral: true
+                });
+
+            } catch (err) {
+
+                console.error(`❌ Äänestyksen #${voteId} äänen käsittely epäonnistui:`, err?.message ?? err);
+                await napinPainaja.reply({ content: "Ääntä ei saatu rekisteröityä. Yritä uudelleen.", ephemeral: true }).catch(() => {});
+
+            }
 
         });
 
         kerays.on("end", async () => {
+
+          try {
 
             const tulokset = await haeAanestysTulos(voteId);
             const syyllisia = tulokset.find(t => t.choice === "syyllinen")?.maara ?? 0;
@@ -92,16 +112,16 @@ module.exports = {
             let deltaSyyllisyys;
 
             if (syyllisia === 0 && viattomia === 0) {
-                lopputulos = "Kukaan ei äänestänyt. Komitea pitää tätä itsessään epäilyttävänä.";
+                lopputulos = satunnainen(AANESTYS_EI_AANIA);
                 deltaSyyllisyys = 3;
             } else if (syyllisia > viattomia) {
-                lopputulos = `Komitea äänesti: **SYYLLINEN** (${syyllisia} vs ${viattomia}).`;
+                lopputulos = tayta(satunnainen(AANESTYS_SYYLLINEN), { a: syyllisia, b: viattomia });
                 deltaSyyllisyys = 12;
             } else if (viattomia > syyllisia) {
-                lopputulos = `Komitea äänesti: **VIATON** (${viattomia} vs ${syyllisia}).`;
+                lopputulos = tayta(satunnainen(AANESTYS_VIATON), { a: viattomia, b: syyllisia });
                 deltaSyyllisyys = -8;
             } else {
-                lopputulos = `Tasapeli (${syyllisia} vs ${syyllisia}). Komitea ei saanut päätöstä aikaan.`;
+                lopputulos = tayta(satunnainen(AANESTYS_TASAPELI), { a: syyllisia });
                 deltaSyyllisyys = 5;
             }
 
@@ -130,6 +150,12 @@ module.exports = {
             );
 
             await interaction.editReply({ embeds: [lopetusEmbed], components: [suljetutNapit] });
+
+          } catch (err) {
+
+            console.error(`❌ Äänestyksen #${voteId} päättäminen epäonnistui:`, err?.message ?? err);
+
+          }
 
         });
 
