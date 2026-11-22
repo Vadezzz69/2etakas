@@ -41,7 +41,7 @@ async function valmisteleSoitto(interaction) {
 
     // Kieltäydytään vain jos puute on varmasti tiedossa; jos botin omaa
     // jäsentietoa ei saada, yritetään liittyä ja liittymisvirhe käsitellään myöhemmin.
-    const minaItse = interaction.guild.members.me ?? await interaction.guild.members.fetchMe?.().catch(() => null);
+    const minaItse = interaction.guild.members.me;
     const oikeudet = minaItse ? kanava.permissionsFor(minaItse) : null;
     if (oikeudet && (!oikeudet.has(PermissionFlagsBits.Connect) || !oikeudet.has(PermissionFlagsBits.Speak))) {
         await piilotettuVastaus(interaction, V.tayta(satunnainen(V.EI_OIKEUKSIA_KANAVALLE), { kanava: `${kanava}` }));
