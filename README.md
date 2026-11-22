@@ -9,21 +9,22 @@ vakoiluteema, trollikomennot, muutama peli ja perusmoderointi.
 
 ## Komennot
 
-Kaikki komennot ovat lyhyitä ja itsenäisiä: ei pakollisia alikomentoja (`/sus`,
-ei `/komitea sus`). Ainoa poikkeus ovat `/tutkinta` ja `/epaily`, jotka ovat
-pysyviä hallintajoukkoja (aloita/todiste/sulje/lista, lisaa/lista/poista).
+Komennot ovat pääosin lyhyitä ja itsenäisiä (`/sus`, ei `/komitea sus`). Poikkeuksia ovat
+ryhmäkomennot `/vakoilu`, `/tutkimus` ja `/oikeus` sekä `/tutkinta` ja `/epaily`, joilla on
+alikomennot (ks. alla).
 
 | Ryhmä | Komennot |
 |---|---|
 | **Komitea & epäilyt** | `/komitea` (päivän päätös oikeasta datasta), `/tuomio`, `/sus`, `/onko`, `/syyllinen`, `/spinner`, `/sakko` (oikea, kirjautuu), `/sakota` (feikki), `/potkaise`, `/bannaa`, `/aikalisa` (kolme feikkimoderointia — eivät tee mitään oikeasti) |
-| **Vakoilu** | `/vakoilu` *(komitea valitsee itse: vakoile / report / wanted)*, `/vakoile`, `/report` *(oikea data)*, `/wanted`, `/koodinimi`, `/tehtava`, `/salaisuus`, `/itsetuho` |
-| **Tutkimus** | `/tutkimus` *(komitea valitsee itse)*, `/ratsia`, `/takavarikko`, `/kuulustelu`, `/rikosrekisteri` *(oikea data)*, `/kamerat`, `/psykoanalyysi` |
-| **Oikeus** | `/oikeus` *(komitea valitsee itse)*, `/syyte`, `/todiste`, `/lasku` |
+| **Vakoilu** | `/vakoilu` *(alikomennot, ks. alla)*, `/vakoile`, `/report` *(oikea data)*, `/wanted`, `/koodinimi`, `/tehtava`, `/salaisuus`, `/itsetuho` |
+| **Tutkimus** | `/tutkimus` *(alikomennot, ks. alla)*, `/ratsia`, `/takavarikko`, `/kuulustelu`, `/rikosrekisteri` *(oikea data)*, `/kamerat`, `/psykoanalyysi` |
+| **Oikeus** | `/oikeus` *(alikomennot, ks. alla)*, `/syyte`, `/todiste`, `/lasku` |
 | **Päivä** | `/paiva` (päivän rikos + päätös, sama koko päivän), `/tekosyy`, `/tiedote`, `/vuodenrikollinen` *(oikea data)* |
 | **Tilastot** | `/tilastot` (kolmen kärki: viestit, ääni, komennot, sakot), `/rankingit` (viestit, ääni, komennot, sakot), `/aktiivisuus`, `/syyllisyys`, `/vammatilastot`, `/kayttajainfo`, `/roast` |
 | **Tutkinnat** | `/tutkinta`, `/epaily`, `/aanestys` |
 | **Hauskat & pelit** | `/loukkaa`, `/meemi`, `/kolikko` |
 | **Moderointi** | `/tyhjenna`, `/varoita`, `/varoitukset`, `/lukitse`, `/avaa`, `/ilmoituskanava`, `/debugvoice` *(vain ylläpitäjille)* |
+| **Musiikki** | `/soita`, `/jono`, `/nyt`, `/ohita`, `/tauko`, `/toisto`, `/sekoita`, `/lopeta` *(ks. kohta Musiikki)* |
 | **Yleiset** | `/help`, `/ping`, `/palvelininfo` |
 
 `/vakoilu`, `/tutkimus` ja `/oikeus` ovat ryhmäkomentoja, joilla on alikomennot:
@@ -38,6 +39,53 @@ suoraan jäsenen omasta määrityksestä, joten koodia ei ole kahdessa paikassa.
 
 Lisäksi viestikäsittelijä tukee `!add !avainsana = vastaus`, `!lista`, `!poista !avainsana`
 ja tallennettuja `!avainsana`-vastauksia (vaatii Message Content Intentin).
+
+## Musiikki
+
+Botti soittaa musiikkia äänikanavalla. Komennot: `/soita <haku tai linkki>`, `/jono`, `/nyt`,
+`/ohita`, `/tauko` (pysäytä/jatka), `/toisto` (pois / kappale / jono), `/sekoita`, `/lopeta`.
+`/soita`:ssa voi valita nimihaun lähteeksi YouTuben tai SoundCloudin.
+
+**Mistä soitetaan**
+
+| Lähde | Tuki |
+|---|---|
+| YouTube, SoundCloud, Bandcamp, Mixcloud, Vimeo | hakusanat, yksittäiset linkit ja soittolistat/albumit (`yt-dlp`) |
+| **Spotify** | kappale-, albumi- ja soittolistalinkit. **Spotifyn ääntä ei voi soittaa** (se on suojattu). Linkistä luetaan vain kappaleiden nimet, ja ääni haetaan nimellä YouTubesta tai SoundCloudista, joten joskus löytyy väärä versio |
+
+Linkit hyväksytään vain sallituilta sivustoilta (lisää omia: `MUSIIKKI_SALLITUT_SIVUT`). Se estää
+käyttäjiä ohjaamasta palvelinta hakemaan mielivaltaisia osoitteita. Suorat lähetykset ja yli
+`MUSIIKKI_MAX_KESTO_MIN` minuutin kappaleet ohitetaan.
+
+**Käyttöönotto** (musiikki on valinnainen: botti toimii ilman näitä, ja `/soita` kertoo mitä puuttuu)
+
+1. Node.js **22.12 tai uudempi** (`@discordjs/voice`-kirjaston vaatimus).
+2. Asenna kirjastot ja **päivitä samalla `package-lock.json`** (tee paikallisesti ja committaa
+   lukkotiedosto, jos hostisi ajaa `npm ci`):
+   `npm install @discordjs/voice @snazzah/davey opusscript ffmpeg-static`
+   (`@snazzah/davey` on pakollinen: Discordin äänikanavat ovat päästä päähän salattuja.)
+3. **yt-dlp**-ohjelma palvelimelle. Jos et voi asentaa ohjelmia, aseta `YTDLP_AUTOASENNUS=1`, jolloin
+   virallinen binääri ladataan kansioon `bin/` ensimmäisellä käytöllä. Muuten `YTDLP_PATH`.
+4. `ffmpeg`: `ffmpeg-static` riittää, tai järjestelmän oma `ffmpeg`.
+5. Tarkista: `npm run musiikki:tarkista`. Se listaa mitä puuttuu.
+6. Botilla pitää olla äänikanavalla oikeudet *Yhdistä* ja *Puhu*. Hostin on sallittava lähtevä UDP-liikenne
+   (osa ilmaishosteista estää sen, jolloin ääniyhteys ei muodostu).
+
+**Ylläpito ja rajoitukset**
+
+- **Päivitä yt-dlp säännöllisesti** (`npm run musiikki:tarkista -- --paivita`). YouTube muuttuu usein, ja
+  vanha versio lakkaa toimimasta.
+- YouTube voi estää haut palvelinten IP-osoitteilta ("kirjaudu sisään"). Silloin auttaa
+  evästetiedosto (`YTDLP_COOKIES`) tai SoundCloud-haku (`MUSIIKKI_HAKULAHDE=soundcloud`).
+- Videopalvelut voivat kieltää äänen irrottamisen käyttöehdoissaan. Käyttö on ylläpitäjän vastuulla.
+- Jonot ovat muistissa: uudelleenkäynnistys tyhjentää ne. Botti poistuu kanavalta, kun jono on ollut
+  tyhjä (`MUSIIKKI_POISTU_JONON_JALKEEN_S`) tai se jää kanavalle yksin (`MUSIIKKI_POISTU_YKSIN_S`).
+- Äänitilastot eivät laske botteja, joten musiikkibotti ei näy äänirankingeissa.
+- Ohjauskomennot (`/ohita`, `/tauko`, `/lopeta`, `/toisto`, `/sekoita`) vaativat, että olet samalla
+  äänikanavalla kuin botti. Roolirajausta ei ole.
+
+Kaikki asetukset ovat `.env.example`-tiedostossa. Logiikkatesti: `npm run musiikkitesti` (feikkiääni,
+ei verkkoa). Se ei testaa oikeaa äänen toistoa Discordissa.
 
 ## Käyttöönotto
 
@@ -108,7 +156,7 @@ kosketa. Se ei korvaa kokeilua livenä (oikeudet, ajastukset, ulkoiset rajapinna
 │   ├── commandHandler.js
 │   └── eventHandler.js
 ├── commands/                 # yksi tiedosto = yksi komento, kansio = /help-kategoria
-├── events/                   # ready, interactionCreate, messageCreate, voiceStateUpdate
+├── events/                   # ready, interactionCreate, messageCreate, voiceStateUpdate, musiikkiAaniTapahtuma
 ├── utils/
 │   ├── db.js                 # Cloudflare D1 -asiakas (Worker-rajapinta)
 │   ├── tilastot.js           # viesti-/ääni-/komentotilastot
@@ -116,13 +164,14 @@ kosketa. Se ei korvaa kokeilua livenä (oikeudet, ajastukset, ulkoiset rajapinna
 │   ├── time.js               # kaikki päivälaskenta Europe/Helsinki -ajassa
 │   ├── satunnainen.js        # jaettu satunnaisuus + toiston esto
 │   ├── ajastin.js            # päivittäinen tiedote
+│   ├── musiikki/             # soitin, jono, lähteet (yt-dlp, Spotify), viestit
 │   ├── comedy/               # huumorigeneraattorit ja sisältöpoolit (data/)
 │   │   └── data/viestit.js   # otsikot, alatunnisteet, virheviestit, "ei dataa" -vastaukset
 │   ├── statsEngine/, roastEngine/, ui/   # ks. kunkin README
 │   └── database/migrations.js  # D1-skeema viitteenä (ei muutettu)
 ├── d1-worker/                # Cloudflare Worker (D1-rajapinta)
 ├── dashboard/                # Web-dashboard
-└── scripts/                  # uusikomento.js, tarkista.js
+└── scripts/                  # uusikomento.js, tarkista.js, ajotesti.js, musiikkitesti.js, musiikki-tarkista.js
 ```
 
 ## Huumorisisältö ja toiston esto

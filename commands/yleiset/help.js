@@ -11,7 +11,8 @@ const KATEGORIA_OTSIKOT = {
     hauskat: "🤕 Hauskat",
     fun: "🎭 Komitean ilveilyt",
     pelit: "🎮 Pelit",
-    tilastot: "📊 Tilastot"
+    tilastot: "📊 Tilastot",
+    musiikki: "🎵 Musiikki"
 };
 
 // Discordin embed-kenttäraja on 1024 merkkiä. Pidetään pieni marginaali
