@@ -26,15 +26,15 @@ module.exports = {
                 )
         ),
 
-    async execute(interaction) {
+async execute(interaction) {
 
-        const valmis = await valmisteleSoitto(interaction);
-        if (!valmis) return;
+    // Kuitataan komento heti, ennen mahdollisia API-pyyntöjä.
+    await interaction.deferReply();
 
-        const { kanava } = valmis;
+    const valmis = await valmisteleSoitto(interaction);
+    if (!valmis) return;
 
-        // Haku voi kestää useita sekunteja, joten kuitataan heti.
-        await interaction.deferReply();
+    const { kanava } = valmis;
 
         try {
             const haku = await haeKappaleet(interaction.options.getString("haku"), {

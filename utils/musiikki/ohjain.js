@@ -12,10 +12,9 @@ const { ilmoitus } = require("./muotoilu");
 const V = require("./viestit");
 
 function piilotettuVastaus(interaction, sisalto) {
-    const data = { content: sisalto, ephemeral: true };
     return interaction.deferred || interaction.replied
-        ? interaction.editReply({ content: sisalto })
-        : interaction.reply(data);
+        ? interaction.editReply({ content: sisalto, embeds: [], components: [] })
+        : interaction.reply({ content: sisalto, ephemeral: true });
 }
 
 /**
