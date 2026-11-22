@@ -106,11 +106,22 @@ async function loyda() {
 
 /** Omistajan lisäargumentit: evästeet, välityspalvelin, omat valinnat. */
 function lisaArgumentit() {
-    const args = [];
+    const args = [
+        "--js-runtimes", "node",
+        "--remote-components", "ejs:github"
+    ];
 
-    if (process.env.YTDLP_COOKIES) args.push("--cookies", process.env.YTDLP_COOKIES);
-    if (process.env.YTDLP_PROXY) args.push("--proxy", process.env.YTDLP_PROXY);
-    if (process.env.YTDLP_LISAARGS) args.push(...process.env.YTDLP_LISAARGS.split(/\s+/).filter(Boolean));
+    if (process.env.YTDLP_COOKIES) {
+        args.push("--cookies", process.env.YTDLP_COOKIES);
+    }
+
+    if (process.env.YTDLP_PROXY) {
+        args.push("--proxy", process.env.YTDLP_PROXY);
+    }
+
+    if (process.env.YTDLP_LISAARGS) {
+        args.push(...process.env.YTDLP_LISAARGS.split(/\s+/).filter(Boolean));
+    }
 
     return args;
 }
