@@ -148,7 +148,6 @@ async function tiedot(kohde, { lista = false, max = 1, aikarajaMs = 30000 } = {}
 
     const args = [
         "--dump-single-json", "--skip-download", "--no-warnings", "--ignore-config",
-        "-f", "bestaudio/best",
         lista ? "--flat-playlist" : "--no-playlist",
         ...(lista ? ["--playlist-end", String(max)] : []),
         ...lisaArgumentit(),
