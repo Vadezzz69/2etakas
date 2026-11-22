@@ -1,4 +1,6 @@
 require("dotenv").config({ quiet: true });
+console.log("📂 BOTIN TYÖHAKEMISTO:", process.cwd());
+console.log("📂 BOTIN YTDLP-POLKU:", require("path").join(process.cwd(), "bin", "yt-dlp"));
 
 const { Client, GatewayIntentBits } = require("discord.js");
 
