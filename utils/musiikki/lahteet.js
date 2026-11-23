@@ -126,7 +126,7 @@ async function haeTekstiLahteesta(teksti, { pyytaja, lahde, asetukset, hakuId })
     lokitaHaku(hakuId, "lahde-alkoi", { lahde });
 
     try {
-        const data = await ytdlp.tiedot(tapahtuma, { lista: false });
+        const data = await ytdlp.tiedot(tapahtuma, { lista: true, max: HAKU_TULOSTEN_MAARA });
         jsonPalautui = true;
         exitCode = 0;
         jsonRakenne = Array.isArray(data?.entries) ? "entries" : "yksittainen-tietue";
