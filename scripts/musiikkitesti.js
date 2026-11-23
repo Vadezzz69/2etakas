@@ -1264,6 +1264,56 @@ komentoTesti("/soita kuittaa interactionin ennen hakua", async () => {
     }
 });
 
+komentoTesti("/soita defer-virheen loki ei sisällä raakaa virhettä", async () => {
+    const y = komentoYmparisto();
+    const vanhaDiagnostiikka = process.env.SOITA_REST_DIAGNOSTIIKKA;
+    const alkuperainenInfo = console.info;
+    const alkuperainenWarn = console.warn;
+    const lokit = [];
+
+    process.env.SOITA_REST_DIAGNOSTIIKKA = "used";
+    console.info = (...args) => lokit.push(args);
+    console.warn = (...args) => lokit.push(args);
+    try {
+        const i = y.interaktio();
+        i.deferReply = async () => {
+            throw Object.assign(new Error("sensitive-error-message"), {
+                status: 404,
+                code: 10062,
+                rawError: { message: "sensitive-response-body" },
+                url: "https://discord.test/interactions/id/sensitive-token/callback",
+                requestBody: { json: { token: "sensitive-request-body" } }
+            });
+        };
+
+        await assert.rejects(y.komento("soita").execute(i), err => err.code === 10062);
+        await new Promise(resolve => setImmediate(resolve));
+
+        const lokiteksti = JSON.stringify(lokit);
+        for (const salaisuus of [
+            "sensitive-error-message",
+            "sensitive-response-body",
+            "sensitive-token",
+            "sensitive-request-body"
+        ]) {
+            assert.equal(lokiteksti.includes(salaisuus), false, `${salaisuus} ei päädy lokiin`);
+        }
+        const deferVirheLoki = lokit.find(args => String(args[0]).startsWith("[deferReply-error] "));
+        assert.ok(deferVirheLoki, "deferReply-virhe kirjataan");
+        assert.deepEqual(JSON.parse(String(deferVirheLoki[0]).slice("[deferReply-error] ".length)), {
+            stage: "await",
+            httpStatus: 404,
+            discordCode: 10062
+        });
+    } finally {
+        console.info = alkuperainenInfo;
+        console.warn = alkuperainenWarn;
+        if (vanhaDiagnostiikka === undefined) delete process.env.SOITA_REST_DIAGNOSTIIKKA;
+        else process.env.SOITA_REST_DIAGNOSTIIKKA = vanhaDiagnostiikka;
+        y.siivoa();
+    }
+});
+
 komentoTesti("vanhentunut interaction ei käynnistä uutta virhevastausta", async () => {
     const tapahtuma = require("../events/interactionCreate");
     const virheet = [];

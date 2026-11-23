@@ -1,5 +1,5 @@
 {
-  "name": "komiteanvakoojabot",
+  "name": "komiteanvakooja",
   "version": "1.1.0",
   "description": "Komitean Discord-botti: tilastot, trollikomennot ja moderointi.",
   "main": "index.js",
