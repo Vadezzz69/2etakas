@@ -54,8 +54,12 @@ function suorita(komento, args) {
         rivi(OK, `yt-dlp ${yt.versio} (${yt.polku})`);
 
         if (process.argv.includes("--paivita")) {
-            const paivitys = await suorita(yt.polku, ["-U"]);
-            console.log(paivitys.err ? `${VAROITUS}Päivitys ei onnistunut: ${paivitys.ulos.split("\n").pop()}` : `🔄 ${paivitys.ulos.split("\n").pop()}`);
+            const paivitys = await ytdlp.suoritaYtdlp(yt.polku, ["-U"], { aikarajaMs: 60_000 });
+            const ulos = `${paivitys.stdout}${paivitys.stderr}`.trim();
+            const viimeinenRivi = ulos.split("\n").pop();
+            console.log(paivitys.error || paivitys.timedOut || paivitys.exitCode !== 0
+                ? `${VAROITUS}Päivitys ei onnistunut: ${viimeinenRivi || "yt-dlp päättyi virheeseen"}`
+                : `🔄 ${viimeinenRivi}`);
         }
     } else {
         rivi(PUUTTUU, `yt-dlp puuttuu (aseta YTDLP_PATH, asenna PATH:iin tai aseta YTDLP_AUTOASENNUS=1). Alusta: ${ytdlp.julkaisunNimi() ?? "ei tuettu"}`);

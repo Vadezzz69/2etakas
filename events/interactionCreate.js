@@ -83,6 +83,9 @@ module.exports = {
                 applicationId: interaction.applicationId ?? null,
                 guildId: interaction.guildId ?? null,
                 channelId: interaction.channelId ?? null,
+                interactionCreateListenerCount: typeof client?.listenerCount === "function"
+                    ? client.listenerCount(Events.InteractionCreate)
+                    : null,
                 createdTimestamp: interaction.createdTimestamp ?? null,
                 context: interaction.context ?? null,
                 version: interaction.version ?? null,

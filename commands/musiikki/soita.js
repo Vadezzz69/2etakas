@@ -42,63 +42,71 @@ function aloitaRestDiagnostiikka(interaction) {
             const context = restDiagnostiikkaContext.getStore();
             if (!context) return Reflect.apply(alkuperainenMakeRequest, this, arguments);
 
-            let osat = [];
+            let osat;
             try {
                 osat = new URL(url).pathname.split("/").filter(Boolean);
             } catch {
-                context.result = {
-                    methodMatchesPost: init?.method === "POST",
-                    callbackRouteMatches: false,
-                    apiVersionIsV10: false,
-                    interactionIdMatches: false,
-                    interactionTokenMatches: false,
-                    httpStatus: null
-                };
+                context.otherRestRequestCount++;
+                return Reflect.apply(alkuperainenMakeRequest, this, arguments);
             }
 
-            if (osat.length) {
-                const interactionsIndex = osat.lastIndexOf("interactions");
-                const hasInteractionRoute = interactionsIndex >= 0;
-                const routeId = hasInteractionRoute ? osat[interactionsIndex + 1] : undefined;
-                const routeToken = hasInteractionRoute ? osat[interactionsIndex + 2] : undefined;
-                const callbackRouteMatches = hasInteractionRoute &&
-                    interactionsIndex + 3 === osat.length - 1 &&
-                    Boolean(routeId) &&
-                    Boolean(routeToken) &&
-                    osat[interactionsIndex + 3] === "callback";
+            const interactionsIndex = osat.lastIndexOf("interactions");
+            const hasInteractionRoute = interactionsIndex >= 0;
+            const routeId = hasInteractionRoute ? osat[interactionsIndex + 1] : undefined;
+            const routeToken = hasInteractionRoute ? osat[interactionsIndex + 2] : undefined;
+            const callbackRouteMatches = hasInteractionRoute &&
+                interactionsIndex + 3 === osat.length - 1 &&
+                Boolean(routeId) &&
+                Boolean(routeToken) &&
+                osat[interactionsIndex + 3] === "callback";
+            const result = {
+                methodMatchesPost: init?.method === "POST",
+                callbackRouteMatches,
+                apiVersionIsV10: osat[0] === "api" && osat[1] === "v10",
+                interactionIdMatches: routeId === context.interactionId,
+                interactionTokenMatches: routeToken === context.interactionToken,
+                httpStatus: null
+            };
+            const callbackMatchesInteraction = result.methodMatchesPost &&
+                result.callbackRouteMatches &&
+                result.apiVersionIsV10 &&
+                result.interactionIdMatches &&
+                result.interactionTokenMatches;
 
-                context.result = {
-                    methodMatchesPost: init?.method === "POST",
-                    callbackRouteMatches,
-                    apiVersionIsV10: osat[0] === "api" && osat[1] === "v10",
-                    interactionIdMatches: routeId === context.interactionId,
-                    interactionTokenMatches: routeToken === context.interactionToken,
-                    httpStatus: null
-                };
+            if (callbackRouteMatches) {
+                context.callbackRequestCount++;
+                if (callbackMatchesInteraction) {
+                    context.matchingCallbackRequestCount++;
+                    context.result = result;
+                } else {
+                    context.mismatchedCallbackRequestCount++;
+                }
+            } else {
+                context.otherRestRequestCount++;
             }
 
             const request = Reflect.apply(alkuperainenMakeRequest, this, arguments);
+            if (!callbackMatchesInteraction) return request;
+
             return Promise.resolve(request).then(
                 response => {
                     context.requestCompletedAt = Date.now();
-                    if (context.result) {
-                        context.result.httpStatus = Number.isInteger(response?.status) ? response.status : null;
-                        try {
-                            context.result.discordDate = response?.headers?.get?.("date") ?? null;
-                            const discordDateMs = context.result.discordDate ? Date.parse(context.result.discordDate) : NaN;
-                            context.result.localMinusDiscordMs = Number.isFinite(discordDateMs)
-                                ? Date.now() - discordDateMs
-                                : null;
-                        } catch {
-                            context.result.discordDate = null;
-                            context.result.localMinusDiscordMs = null;
-                        }
+                    result.httpStatus = Number.isInteger(response?.status) ? response.status : null;
+                    try {
+                        result.discordDate = response?.headers?.get?.("date") ?? null;
+                        const discordDateMs = result.discordDate ? Date.parse(result.discordDate) : NaN;
+                        result.localMinusDiscordMs = Number.isFinite(discordDateMs)
+                            ? Date.now() - discordDateMs
+                            : null;
+                    } catch {
+                        result.discordDate = null;
+                        result.localMinusDiscordMs = null;
                     }
                     return response;
                 },
                 error => {
                     context.requestCompletedAt = Date.now();
-                    if (context.result) context.result.httpStatus = null;
+                    result.httpStatus = null;
                     throw error;
                 }
             );
@@ -117,6 +125,10 @@ function aloitaRestDiagnostiikka(interaction) {
         initiallyReplied: interaction.replied,
         applicationId: interaction.applicationId,
         clientApplicationId: interaction.client.application?.id ?? null,
+        callbackRequestCount: 0,
+        matchingCallbackRequestCount: 0,
+        mismatchedCallbackRequestCount: 0,
+        otherRestRequestCount: 0,
         result: null
     };
 
@@ -136,6 +148,10 @@ function aloitaRestDiagnostiikka(interaction) {
                 apiVersionIsV10: pyynto.apiVersionIsV10 === true,
                 interactionIdMatches: pyynto.interactionIdMatches === true,
                 interactionTokenMatches: pyynto.interactionTokenMatches === true,
+                callbackRequestCount: context.callbackRequestCount,
+                matchingCallbackRequestCount: context.matchingCallbackRequestCount,
+                mismatchedCallbackRequestCount: context.mismatchedCallbackRequestCount,
+                otherRestRequestCount: context.otherRestRequestCount,
                 pid: process.pid,
                 httpStatus: Number.isInteger(pyynto.httpStatus) ? pyynto.httpStatus : null,
                 discordCode: Number.isInteger(virhe?.code) ? virhe.code : null,

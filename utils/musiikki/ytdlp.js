@@ -1,7 +1,8 @@
 
 const fs = require("fs");
 const path = require("path");
-const { spawn, execFile } = require("child_process");
+const os = require("os");
+const { spawn } = require("child_process");
 const { Transform } = require("stream");
 
 const BIN_KANSIO = path.join(process.cwd(), "bin");
@@ -98,12 +99,84 @@ function lisaaProsessivirheenDiagnostiikka(virhe, vaihe, stderr = "") {
     return virhe;
 }
 
-function testaaBinaari(polku) {
-    return new Promise(resolve => {
-        execFile(polku, ["--version"], { timeout: 15000 }, (err, stdout) => {
-            resolve(err ? null : String(stdout).trim());
+function kaynnistaYtdlpProsessi(polku, args, options = {}) {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "2etakas-ytdlp-"));
+    const env = {
+        ...process.env,
+        ...options.env,
+        TMPDIR: tmpDir,
+        TMP: tmpDir,
+        TEMP: tmpDir
+    };
+    let proc;
+
+    try {
+        proc = spawn(polku, args, { ...options, env });
+    } catch (err) {
+        void fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(siivoamisvirhe => {
+            console.warn("[ytdlp-temp-cleanup] " + JSON.stringify({ code: siivoamisvirhe?.code ?? null }));
         });
+        throw err;
+    }
+
+    let cleanupPromise;
+    const cleanup = () => {
+        if (!cleanupPromise) {
+            cleanupPromise = fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(err => {
+                console.warn("[ytdlp-temp-cleanup] " + JSON.stringify({ code: err?.code ?? null }));
+            });
+        }
+        return cleanupPromise;
+    };
+
+    proc.once("error", () => { void cleanup(); });
+    proc.once("close", () => { void cleanup(); });
+
+    return { proc, tmpDir, cleanup };
+}
+
+function suoritaYtdlp(polku, args, { aikarajaMs = 15_000 } = {}) {
+    return new Promise(resolve => {
+        let ytdlpProsessi;
+        try {
+            ytdlpProsessi = kaynnistaYtdlpProsessi(polku, args, {
+                stdio: ["ignore", "pipe", "pipe"]
+            });
+        } catch (error) {
+            resolve({ exitCode: null, stdout: "", stderr: "", error, timedOut: false });
+            return;
+        }
+
+        const { proc } = ytdlpProsessi;
+        let stdout = "";
+        let stderr = "";
+        let timedOut = false;
+        let valmis = false;
+        const ajastin = setTimeout(() => {
+            timedOut = true;
+            proc.kill("SIGKILL");
+        }, aikarajaMs);
+
+        const viimeistele = async (exitCode, error = null) => {
+            if (valmis) return;
+            valmis = true;
+            clearTimeout(ajastin);
+            await ytdlpProsessi.cleanup();
+            resolve({ exitCode, stdout, stderr, error, timedOut });
+        };
+
+        proc.stdout.on("data", data => { stdout += data.toString(); });
+        proc.stderr.on("data", data => { stderr += data.toString(); });
+        proc.once("error", error => { void viimeistele(null, error); });
+        proc.once("close", exitCode => { void viimeistele(exitCode); });
     });
+}
+
+async function testaaBinaari(polku) {
+    const tulos = await suoritaYtdlp(polku, ["--version"]);
+    return !tulos.error && !tulos.timedOut && tulos.exitCode === 0
+        ? tulos.stdout.trim()
+        : null;
 }
 
 function paikallinenNimi() {
@@ -243,7 +316,8 @@ async function tiedot(kohde, { lista = false, max = 1, aikarajaMs = 30000 } = {}
     ];
 
     return new Promise((resolve, reject) => {
-        const proc = spawn(bin.polku, args, { stdio: ["ignore", "pipe", "pipe"] });
+        const ytdlpProsessi = kaynnistaYtdlpProsessi(bin.polku, args, { stdio: ["ignore", "pipe", "pipe"] });
+        const proc = ytdlpProsessi.proc;
         const osat = [];
         let koko = 0;
         let virheTeksti = "";
@@ -272,15 +346,17 @@ async function tiedot(kohde, { lista = false, max = 1, aikarajaMs = 30000 } = {}
             virheTeksti = (virheTeksti + d).slice(-2000);
         });
 
-        proc.on("error", err => {
+        proc.on("error", async err => {
             clearTimeout(ajastin);
+            await ytdlpProsessi.cleanup();
             if (valmis) return;
             valmis = true;
             reject(lisaaProsessivirheenDiagnostiikka(err, "metadata-spawn", virheTeksti));
         });
 
-        proc.on("close", koodi => {
+        proc.on("close", async koodi => {
             clearTimeout(ajastin);
+            await ytdlpProsessi.cleanup();
             if (valmis) return;
             valmis = true;
 
@@ -320,7 +396,8 @@ async function virta(kohde) {
         "-o", "-", "--", kohde
     ];
 
-    const proc = spawn(bin.polku, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const ytdlpProsessi = kaynnistaYtdlpProsessi(bin.polku, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const proc = ytdlpProsessi.proc;
     let tavuja = 0;
     let virheTeksti = "";
     let kaynnistynyt = false;
@@ -380,9 +457,10 @@ async function virta(kohde) {
             kaynnistynyt = true;
         });
 
-        proc.on("error", err => {
+        proc.on("error", async err => {
             virheTeksti = err.message;
             if (!kaynnistynyt) {
+                await ytdlpProsessi.cleanup();
                 viimeistele(lisaaProsessivirheenDiagnostiikka(err, "stream-spawn", virheTeksti));
             } else if (!suljettu) {
                 if (!aanivirtaValmis) {
@@ -399,7 +477,8 @@ async function virta(kohde) {
         });
     });
 
-    proc.once("close", (koodi, signaali) => {
+    proc.once("close", async (koodi, signaali) => {
+        await ytdlpProsessi.cleanup();
         if (suljettu || mitattuVirta.destroyed) return;
 
         if (koodi === 0) {
@@ -470,4 +549,14 @@ async function virta(kohde) {
     };
 }
 
-module.exports = { loyda, tiedot, virta, julkaisunNimi, luoYtdlpVirhe, turvallinenDiagnostiikkaTeksti, stderrDiagnostiikka };
+module.exports = {
+    loyda,
+    tiedot,
+    virta,
+    julkaisunNimi,
+    luoYtdlpVirhe,
+    turvallinenDiagnostiikkaTeksti,
+    stderrDiagnostiikka,
+    kaynnistaYtdlpProsessi,
+    suoritaYtdlp
+};

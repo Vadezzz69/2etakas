@@ -10,6 +10,7 @@
 
 const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
+const fs = require("node:fs");
 const { PassThrough } = require("node:stream");
 
 const { Soitin } = require("../utils/musiikki/soitin");
@@ -91,6 +92,35 @@ function luo(valinnat = {}) {
 
 const testit = [];
 const testi = (nimi, fn) => testit.push([nimi, fn]);
+
+testi("rinnakkaiset yt-dlp-prosessit saavat erilliset temp-hakemistot ja ne siivotaan", async () => {
+    const ohjelma = "process.stdout.write([process.env.TMPDIR, process.env.TMP, process.env.TEMP].join('\\n'))";
+    const options = { stdio: ["ignore", "pipe", "ignore"] };
+    const eka = ytdlp.kaynnistaYtdlpProsessi(process.execPath, ["-e", ohjelma], options);
+    const toka = ytdlp.kaynnistaYtdlpProsessi(process.execPath, ["-e", ohjelma], options);
+    let ekaTuloste = "";
+    let tokaTuloste = "";
+    eka.proc.stdout.on("data", data => { ekaTuloste += data.toString(); });
+    toka.proc.stdout.on("data", data => { tokaTuloste += data.toString(); });
+
+    try {
+        await Promise.all([
+            new Promise(resolve => eka.proc.once("close", resolve)),
+            new Promise(resolve => toka.proc.once("close", resolve))
+        ]);
+        await Promise.all([eka.cleanup(), toka.cleanup()]);
+
+        assert.notEqual(eka.tmpDir, toka.tmpDir);
+        assert.deepEqual(ekaTuloste.split("\n"), [eka.tmpDir, eka.tmpDir, eka.tmpDir]);
+        assert.deepEqual(tokaTuloste.split("\n"), [toka.tmpDir, toka.tmpDir, toka.tmpDir]);
+        assert.equal(fs.existsSync(eka.tmpDir), false);
+        assert.equal(fs.existsSync(toka.tmpDir), false);
+    } finally {
+        if (eka.proc.exitCode === null) eka.proc.kill("SIGKILL");
+        if (toka.proc.exitCode === null) toka.proc.kill("SIGKILL");
+        await Promise.all([eka.cleanup(), toka.cleanup()]);
+    }
+});
 
 // ---------------------------------------------------------------------------
 // Soitin
@@ -1501,6 +1531,75 @@ komentoTesti("/soita defer-virheen loki ei sisällä raakaa virhettä", async ()
         console.warn = alkuperainenWarn;
         if (vanhaDiagnostiikka === undefined) delete process.env.SOITA_REST_DIAGNOSTIIKKA;
         else process.env.SOITA_REST_DIAGNOSTIIKKA = vanhaDiagnostiikka;
+        y.siivoa();
+    }
+});
+
+komentoTesti("/soita REST-diagnostiikka laskee callbackin ja välittää pyynnöt muuttamatta", async () => {
+    const y = komentoYmparisto();
+    const vanhaDiagnostiikka = process.env.SOITA_REST_DIAGNOSTIIKKA;
+    const vanhaBypass = process.env.SOITA_REST_DIAGNOSTIIKKA_BYPASS;
+    const alkuperainenInfo = console.info;
+    const lokit = [];
+    const kutsut = [];
+    const interactionId = "diagnostic-interaction";
+    const interactionToken = "diagnostic-token";
+    const unrelatedInit = { method: "GET", headers: { "x-test": "unchanged" } };
+    const callbackInit = { method: "POST", body: { type: 5 } };
+    const rest = {
+        options: {
+            makeRequest(url, init) {
+                kutsut.push({ url, init, thisValue: this });
+                return Promise.resolve({ status: url.includes("/callback") ? 204 : 200 });
+            }
+        }
+    };
+
+    process.env.SOITA_REST_DIAGNOSTIIKKA = "1";
+    delete process.env.SOITA_REST_DIAGNOSTIIKKA_BYPASS;
+    console.info = (...args) => lokit.push(args.map(String).join(" "));
+
+    try {
+        const i = y.interaktio({ valinnat: { haku: "testi" } });
+        i.id = interactionId;
+        i.token = interactionToken;
+        i.applicationId = "application-id";
+        i.createdTimestamp = Date.now();
+        i.client = { rest, application: { id: "application-id" } };
+        i.deferReply = async () => {
+            i.deferred = true;
+            i.deferCalls++;
+            await rest.options.makeRequest("https://discord.com/api/v10/users/@me", unrelatedInit);
+            return rest.options.makeRequest(
+                `https://discord.com/api/v10/interactions/${interactionId}/${interactionToken}/callback?with_response=false`,
+                callbackInit
+            );
+        };
+
+        await y.komento("soita").execute(i);
+
+        const diagnosticLog = lokit.find(line => line.startsWith("[soita-rest-diagnostic] "));
+        assert.ok(diagnosticLog);
+        const diagnostic = JSON.parse(diagnosticLog.slice("[soita-rest-diagnostic] ".length));
+        assert.equal(i.deferCalls, 1);
+        assert.equal(kutsut.length, 2);
+        assert.equal(kutsut[0].url, "https://discord.com/api/v10/users/@me");
+        assert.strictEqual(kutsut[0].init, unrelatedInit);
+        assert.strictEqual(kutsut[0].thisValue, rest.options);
+        assert.strictEqual(kutsut[1].init, callbackInit);
+        assert.strictEqual(kutsut[1].thisValue, rest.options);
+        assert.equal(diagnostic.callbackRequestCount, 1);
+        assert.equal(diagnostic.matchingCallbackRequestCount, 1);
+        assert.equal(diagnostic.mismatchedCallbackRequestCount, 0);
+        assert.equal(diagnostic.otherRestRequestCount, 1);
+        assert.equal(diagnostic.httpStatus, 204);
+        assert.equal(lokit.join("\n").includes(interactionToken), false);
+    } finally {
+        console.info = alkuperainenInfo;
+        if (vanhaDiagnostiikka === undefined) delete process.env.SOITA_REST_DIAGNOSTIIKKA;
+        else process.env.SOITA_REST_DIAGNOSTIIKKA = vanhaDiagnostiikka;
+        if (vanhaBypass === undefined) delete process.env.SOITA_REST_DIAGNOSTIIKKA_BYPASS;
+        else process.env.SOITA_REST_DIAGNOSTIIKKA_BYPASS = vanhaBypass;
         y.siivoa();
     }
 });
