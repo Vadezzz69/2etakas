@@ -6,7 +6,7 @@ const { VIRHEVIESTIT, VANHAT_KOMENNOT } = require("../utils/comedy/data/viestit"
 function kirjaaInteractionAika(interaction, vaihe, tiedot = {}) {
     const nyt = Date.now();
     const luotuMs = interaction?.createdTimestamp;
-    console.info(`[interaction-timing] ${JSON.stringify({
+    const rivi = {
         vaihe,
         komento: "soita",
         interactionId: interaction?.id ?? null,
@@ -16,7 +16,8 @@ function kirjaaInteractionAika(interaction, vaihe, tiedot = {}) {
         luotuMs: Number.isFinite(luotuMs) ? luotuMs : null,
         viiveLuonnistaMs: Number.isFinite(luotuMs) ? nyt - luotuMs : null,
         ...tiedot
-    })}`);
+    };
+    setImmediate(() => console.info(`[interaction-timing] ${JSON.stringify(rivi)}`));
 }
 
 /**

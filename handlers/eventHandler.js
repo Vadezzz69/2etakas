@@ -6,7 +6,7 @@ const EVENTIT_KANSIO = path.join(__dirname, "..", "events");
 function kirjaaInteractionAika(interaction) {
     const nyt = Date.now();
     const luotuMs = interaction?.createdTimestamp;
-    console.info(`[interaction-timing] ${JSON.stringify({
+    const rivi = {
         vaihe: "event-handler-received",
         komento: "soita",
         interactionId: interaction?.id ?? null,
@@ -15,7 +15,8 @@ function kirjaaInteractionAika(interaction) {
         aikaMs: nyt,
         luotuMs: Number.isFinite(luotuMs) ? luotuMs : null,
         viiveLuonnistaMs: Number.isFinite(luotuMs) ? nyt - luotuMs : null
-    })}`);
+    };
+    setImmediate(() => console.info(`[interaction-timing] ${JSON.stringify(rivi)}`));
 }
 
 module.exports = (client) => {

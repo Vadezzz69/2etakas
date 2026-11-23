@@ -188,6 +188,24 @@ testi("luoVirta-poikkeus ohittaa kappaleen ja jatkaa", async () => {
     assert.deepEqual(soitin.toistettu.map(x => x.otsikko), ["b"]);
 });
 
+testi("ääniresurssin luontivirhe sulkee virran ja soitto jatkuu seuraavasta", async () => {
+    const { s, aani, soitin, loki, tapahtumat } = luo();
+    const luoResurssi = aani.createAudioResource;
+    let kutsut = 0;
+    aani.createAudioResource = (...args) => {
+        if (kutsut++ === 0) throw new Error("ffmpeg failure");
+        return luoResurssi(...args);
+    };
+
+    s.lisaa([k("a"), k("b")]);
+    await aika(10);
+
+    assert.equal(loki.suljettu, 1, "epäonnistuneen kappaleen virta suljettiin");
+    assert.equal(tapahtumat.filter(t => t.tyyppi === "virhe").length, 1);
+    assert.deepEqual(soitin.toistettu.map(x => x.otsikko), ["b"]);
+    assert.equal(s.nyt.otsikko, "b");
+});
+
 testi("yt-dlp:n puuttuminen tyhjentää jonon eikä yritä jokaista erikseen", async () => {
     const { s, tapahtumat } = luo({ virrat: { heita: "YTDLP_PUUTTUU" } });
     s.lisaa([k("a"), k("b"), k("c")]);
@@ -356,11 +374,52 @@ testi("ytdlpKappale muuntaa yt-dlp:n vastauksen ja suodatus hylkää suorat ja l
     assert.equal(kap.kuva, "https://i/a.jpg");
     assert.equal(lahteet.ytdlpKappale({ title: "ilman osoitetta" }, { hakulahde: "youtube" }), null);
 
+    const youtubeId = lahteet.ytdlpKappale({ id: "youtube-id", title: "YouTube result", extractor_key: "Youtube" }, { hakulahde: "youtube" });
+    assert.equal(youtubeId.url, "https://www.youtube.com/watch?v=youtube-id");
+
+    const soundcloud = lahteet.ytdlpKappale({
+        title: "SoundCloud result",
+        artists: ["SoundCloud artist"],
+        permalink_url: "https://soundcloud.com/artist/track",
+        extractor_key: "Soundcloud"
+    }, { hakulahde: "soundcloud" });
+    assert.equal(soundcloud.url, "https://soundcloud.com/artist/track");
+    assert.equal(soundcloud.artisti, "SoundCloud artist");
+    assert.equal(soundcloud.kesto, null);
+    assert.equal(soundcloud.kuva, null);
+
     const suora = lahteet.ytdlpKappale({ title: "Live", webpage_url: "https://www.youtube.com/watch?v=l", is_live: true }, { hakulahde: "youtube" });
     const pitka = { ...kap, kesto: 99999 };
     const { kelvolliset, hylatty } = lahteet.suodata([kap, suora, pitka], ASETUKSET);
     assert.equal(kelvolliset.length, 1);
     assert.equal(hylatty, 2);
+});
+
+testi("haeKappaleet käsittelee yhden YouTube- ja SoundCloud-kappaleen metadataolion", async () => {
+    const alkuperainen = ytdlp.tiedot;
+    const pyydetyt = [];
+    ytdlp.tiedot = async url => {
+        pyydetyt.push(url);
+        return {
+            title: "Yksittäinen kappale",
+            webpage_url: url,
+            extractor_key: url.includes("soundcloud") ? "Soundcloud" : "Youtube"
+        };
+    };
+
+    try {
+        const youtube = await lahteet.haeKappaleet("https://www.youtube.com/watch?v=one", { pyytaja: "u", asetukset: ASETUKSET });
+        const soundcloud = await lahteet.haeKappaleet("https://soundcloud.com/artist/one", { pyytaja: "u", asetukset: ASETUKSET });
+        assert.equal(youtube.kappaleet[0].otsikko, "Yksittäinen kappale");
+        assert.equal(youtube.kappaleet[0].artisti, null);
+        assert.equal(soundcloud.kappaleet[0].url, "https://soundcloud.com/artist/one");
+        assert.deepEqual(pyydetyt, [
+            "https://www.youtube.com/watch?v=one",
+            "https://soundcloud.com/artist/one"
+        ]);
+    } finally {
+        ytdlp.tiedot = alkuperainen;
+    }
 });
 
 testi("hakutulosten järjestys suosii pyytämätöntä remix-versiota alkuperäistä vähemmän", () => {
@@ -436,13 +495,14 @@ testi("YouTube-haku yrittää SoundCloudia teknisen virheen tai tyhjän tuloksen
     ytdlp.tiedot = async kohde => {
         kutsut.push(kohde);
         if (kohde.startsWith("ytsearch5:")) return { entries: [] };
-        return { entries: [{ title: "Varatuloksen kappale", webpage_url: "https://soundcloud.com/a/varatulos", duration: 180 }] };
+        return { entries: [{ title: "Varatuloksen kappale", artists: ["SoundCloud artist"], permalink_url: "https://soundcloud.com/a/varatulos" }] };
     };
 
     try {
         const tulos = await lahteet.haeKappaleet("toinen kappale", { pyytaja: "u", asetukset: ASETUKSET });
         assert.deepEqual(kutsut.map(k => k.split(":")[0]), ["ytsearch5", "scsearch5"]);
         assert.equal(tulos.kappaleet[0].otsikko, "Varatuloksen kappale");
+        assert.equal(tulos.kappaleet[0].artisti, "SoundCloud artist");
     } finally {
         ytdlp.tiedot = alkuperainen;
     }
@@ -584,8 +644,141 @@ testi("yt-dlp-virheet muutetaan käyttäjäystävällisiksi viesteiksi", async (
             () => lahteet.haeKappaleet("https://www.youtube.com/watch?v=private", { pyytaja: "u", asetukset: ASETUKSET }),
             /yksityinen/
         );
+
+        const tunnistetutVirheet = [
+            ["ERROR: Requested format is not available", /soittokelpoista ääntä/],
+            ["ERROR: Video is not available in your country", /tällä alueella/],
+            ["ERROR: HTTP Error 403: Forbidden", /esti pyynnön/],
+            ["ERROR: Unable to download webpage: timed out", /Yhteys musiikin lähteeseen/]
+        ];
+        for (const [yksityiskohta, odotus] of tunnistetutVirheet) {
+            ytdlp.tiedot = async () => {
+                throw Object.assign(new Error("YTDLP_VIRHE"), { yksityiskohta });
+            };
+            await assert.rejects(
+                () => lahteet.haeKappaleet("https://soundcloud.com/artist/track", { pyytaja: "u", asetukset: ASETUKSET }),
+                odotus
+            );
+        }
     } finally {
         ytdlp.tiedot = alkuperainen;
+    }
+});
+
+testi("suoran linkin yt-dlp-virhe säilyy turvallisessa diagnostiikassa", async () => {
+    const alkuperainenTiedot = ytdlp.tiedot;
+    const alkuperainenInfo = console.info;
+    const lokit = [];
+    const syy = new Error("source request rejected token=cause-secret");
+    const virhe = ytdlp.luoYtdlpVirhe({
+        vaihe: "metadata-process-exit",
+        exitCode: 2,
+        stderr: 'ERROR: source failure https://user:pass@youtube.com/watch?v=secret-id&token=url-secret token=inline-secret --cookies "C:\\private\\cookies.txt" YTDLP_PROXY=proxy-secret',
+        cause: syy,
+        syy: syy.message
+    });
+
+    ytdlp.tiedot = async () => { throw virhe; };
+    console.info = viesti => lokit.push(String(viesti));
+
+    try {
+        assert.equal(virhe.cause, syy, "yt-dlp-virhe säilyttää alkuperäisen syyn");
+        await assert.rejects(
+            () => lahteet.haeKappaleet("https://www.youtube.com/watch?v=video-id", { pyytaja: "u", asetukset: ASETUKSET }),
+            err => {
+                assert.match(err.message, /Kappaleen tietoja ei saatu haettua/);
+                assert.equal(err.cause, virhe, "yleinen käyttäjävirhe säilyttää alkuperäisen yt-dlp-virheen");
+                return true;
+            }
+        );
+
+        const virherivi = lokit.find(teksti => teksti.includes('"vaihe":"linkki-virhe"'));
+        assert.ok(virherivi, "suoran linkin diagnostinen virherivi löytyi");
+        const rivi = JSON.parse(virherivi.slice("[musiikki-haku] ".length));
+        assert.equal(rivi.syote, "linkki");
+        assert.equal(rivi.lahde, "YouTube");
+        assert.equal(rivi.vaihe, "linkki-virhe");
+        assert.equal(rivi.virheenVaihe, "metadata-process-exit");
+        assert.equal(rivi.virheluokka, "yt-dlp-virhe");
+        assert.equal(rivi.exitCode, 2);
+        assert.equal(rivi.stderrLuokka, "luokittelematon");
+        assert.equal(rivi.stderrKuvaus, "yt-dlp palautti luokittelemattoman virhetekstin");
+        assert.equal("stderr" in rivi, false, "raaka stderr ei päädy lokiin");
+        for (const salaisuus of ["user:pass", "secret-id", "url-secret", "inline-secret", "cookies.txt", "proxy-secret", "cause-secret"]) {
+            assert.equal(JSON.stringify(rivi).includes(salaisuus), false, `loki ei saa sisältää arvoa ${salaisuus}`);
+        }
+    } finally {
+        ytdlp.tiedot = alkuperainenTiedot;
+        console.info = alkuperainenInfo;
+    }
+});
+
+testi("tekstihaku lokittaa YouTube- ja SoundCloud-virheet erikseen ja jatkaa seuraavaan hakuun", async () => {
+    const alkuperainenTiedot = ytdlp.tiedot;
+    const alkuperainenInfo = console.info;
+    const lokit = [];
+    const youtubeSyy = new Error("YouTube vaatii kirjautumisen");
+    const soundcloudSyy = new Error("SoundCloud esti pyynnön");
+    const youtubeVirhe = ytdlp.luoYtdlpVirhe({
+        vaihe: "metadata-process-exit",
+        exitCode: 17,
+        stderr: "ERROR: [youtube] dQw4w9WgXcQ: Sign in to confirm you're not a bot https://youtube.com/watch?v=dQw4w9WgXcQ&token=video-secret",
+        cause: youtubeSyy
+    });
+    const soundcloudVirhe = ytdlp.luoYtdlpVirhe({
+        vaihe: "metadata-process-exit",
+        exitCode: 23,
+        stderr: "ERROR: [soundcloud] artist-track-987: HTTP Error 403: Forbidden cookie=track-secret",
+        cause: soundcloudSyy
+    });
+    const pyydetyt = [];
+
+    ytdlp.tiedot = async haku => {
+        pyydetyt.push(haku);
+        if (haku.startsWith("ytsearch5:ensimmainen")) throw youtubeVirhe;
+        if (haku.startsWith("scsearch5:ensimmainen")) throw soundcloudVirhe;
+        return {
+            entries: [{
+                title: "Löytynyt seuraavalla haulla",
+                webpage_url: "https://www.youtube.com/watch?v=ok",
+                extractor_key: "Youtube",
+                duration: 120
+            }]
+        };
+    };
+    console.info = viesti => lokit.push(String(viesti));
+
+    try {
+        assert.equal(youtubeVirhe.cause, youtubeSyy);
+        assert.equal(soundcloudVirhe.cause, soundcloudSyy);
+        await assert.rejects(
+            () => lahteet.haeKappaleet("ensimmainen kappale", { pyytaja: "u", asetukset: ASETUKSET }),
+            /YouTube- ja SoundCloud-haku epäonnistuivat/
+        );
+
+        const virherivit = lokit
+            .filter(teksti => teksti.includes('"vaihe":"lahde-virhe"'))
+            .map(teksti => JSON.parse(teksti.slice("[musiikki-haku] ".length)));
+        assert.equal(virherivit.length, 2);
+        assert.equal(virherivit[0].hakuId, virherivit[1].hakuId);
+        assert.deepEqual(virherivit.map(rivi => rivi.lahde), ["YouTube", "SoundCloud"]);
+        assert.deepEqual(virherivit.map(rivi => rivi.exitCode), [17, 23]);
+        assert.deepEqual(virherivit.map(rivi => rivi.stderrLuokka), ["kirjautuminen", "esto"]);
+        assert.ok(virherivit.every(rivi => rivi.virheenVaihe === "metadata-process-exit"));
+        assert.ok(virherivit.every(rivi => !("stderr" in rivi)));
+
+        const tulos = await lahteet.haeKappaleet("toinen erillinen haku", { pyytaja: "u", asetukset: ASETUKSET });
+        assert.equal(tulos.kappaleet[0].otsikko, "Löytynyt seuraavalla haulla");
+        assert.equal(pyydetyt.length, 3);
+        assert.deepEqual(pyydetyt.map(haku => haku.split(":")[0]), ["ytsearch5", "scsearch5", "ytsearch5"]);
+
+        const kaikkiLokit = lokit.join("\n");
+        for (const salaisuus of ["dQw4w9WgXcQ", "video-secret", "artist-track-987", "track-secret"]) {
+            assert.equal(kaikkiLokit.includes(salaisuus), false, `lokissa ei saa näkyä arvoa ${salaisuus}`);
+        }
+    } finally {
+        ytdlp.tiedot = alkuperainenTiedot;
+        console.info = alkuperainenInfo;
     }
 });
 
@@ -671,25 +864,37 @@ const teksti = v => (typeof v === "string" ? v : v?.content ?? "");
 
 komentoTesti("/soita kuittaa interactionin ennen hakua", async () => {
     const y = komentoYmparisto();
+    const alkuperainenInfo = console.info;
+    let kuittausTehty = false;
+    let lokiEnnenKuittausta = false;
     try {
         const i = y.interaktio({ valinnat: { haku: "testi" } });
         const jarjestys = [];
         const alkuperainenTiedot = ytdlp.tiedot;
+        const alkuperainenDefer = i.deferReply;
+        console.info = (...args) => {
+            if (!kuittausTehty && String(args[0]).startsWith("[interaction-timing]")) lokiEnnenKuittausta = true;
+        };
+        i.deferReply = async (...args) => {
+            jarjestys.push("kuittaus");
+            const vastaus = await alkuperainenDefer(...args);
+            kuittausTehty = true;
+            return vastaus;
+        };
         ytdlp.tiedot = async (...args) => {
             jarjestys.push("haku");
             assert.equal(i.deferred, true, "interaction pitää kuitata ennen hakua");
             assert.equal(i.deferCalls, 1, "interaction kuitataan vain kerran");
             return alkuperainenTiedot(...args);
         };
-        const alkuperainenDefer = i.deferReply;
-        i.deferReply = async (...args) => {
-            jarjestys.push("kuittaus");
-            return alkuperainenDefer(...args);
-        };
 
         await y.komento("soita").execute(i);
         assert.deepEqual(jarjestys, ["kuittaus", "haku"]);
-    } finally { y.siivoa(); }
+        assert.equal(lokiEnnenKuittausta, false, "ajoituslokien tulostus ei saa viivästyttää kuittausta");
+    } finally {
+        console.info = alkuperainenInfo;
+        y.siivoa();
+    }
 });
 
 komentoTesti("vanhentunut interaction ei käynnistä uutta virhevastausta", async () => {
@@ -851,6 +1056,36 @@ komentoTesti("/soita haku toimii uudelleen lopetuksen jälkeen useita kertoja", 
             await y.komento("lopeta").execute(y.interaktio());
             assert.equal(y.soitinModuuli.haeSoitin("g1"), null, `soitin poistui kierroksella ${kierros + 1}`);
         }
+    } finally { y.siivoa(); }
+});
+
+komentoTesti("/soita toimii uudelleen epäonnistuneen äänivirran jälkeen", async () => {
+    const y = komentoYmparisto();
+    try {
+        let virtaKutsut = 0;
+        ytdlp.virta = async () => {
+            if (virtaKutsut++ === 1) throw Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" });
+            return { stream: new PassThrough(), tavuja: () => 100, virhe: () => "", sulje: () => {} };
+        };
+
+        await y.komento("soita").execute(y.interaktio({ valinnat: { haku: "onnistuva" } }));
+        await aika(10);
+        const soitin = y.soitinModuuli.haeSoitin("g1");
+        assert.ok(soitin);
+        assert.equal(soitin.nyt.otsikko, "Haku: ytsearch5:onnistuva");
+
+        soitin.soitin.loppui();
+        await aika(10);
+        assert.equal(soitin.nyt, null, "onnistunut kappale päättyi normaalisti");
+
+        await y.komento("soita").execute(y.interaktio({ valinnat: { haku: "epäonnistuva" } }));
+        await aika(10);
+        assert.equal(soitin.nyt, null, "epäonnistunut toinen virta siivosi kappaleen");
+
+        await y.komento("soita").execute(y.interaktio({ valinnat: { haku: "seuraava" } }));
+        await aika(10);
+        assert.equal(soitin.nyt.otsikko, "Haku: ytsearch5:seuraava");
+        assert.equal(virtaKutsut, 3);
     } finally { y.siivoa(); }
 });
 

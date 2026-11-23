@@ -262,6 +262,8 @@ class Soitin {
         const epaonnistui = Boolean(virhe) || (eiTullutAanta && Date.now() - this.alkoi < ALKUVIRHE_RAJA_MS);
 
         virta?.sulje();
+        this.virta = null;
+        this.resurssi = null;
 
         if (epaonnistui) {
             this.ilmoita({ tyyppi: "virhe", kappale, syy: virta?.virhe?.() || virhe || "" });
@@ -318,6 +320,9 @@ class Soitin {
         } catch (err) {
             if (sarja !== this.sarja || this.lopetettu) return;
 
+            this.virta?.sulje();
+            this.virta = null;
+            this.resurssi = null;
             const puuttuu = err.message === "YTDLP_PUUTTUU";
             this.ilmoita({ tyyppi: "virhe", kappale: seuraava, syy: puuttuu ? "yt-dlp puuttuu palvelimelta" : err.message });
             if (puuttuu) this.jono = []; // ei kannata yrittää jokaista kappaletta erikseen

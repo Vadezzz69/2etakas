@@ -77,6 +77,31 @@ function virheenLuokka(err) {
     return "odottamaton-virhe";
 }
 
+function lahteenNimi(url) {
+    const host = url.hostname.toLowerCase();
+    if (host === "soundcloud.com" || host.endsWith(".soundcloud.com")) return "SoundCloud";
+    if (host === "youtu.be" || host === "youtube.com" || host.endsWith(".youtube.com")) return "YouTube";
+    return "muu";
+}
+
+function ytdlpDiagnostiikka(err) {
+    const sallitutVaiheet = new Set([
+        "metadata-timeout",
+        "metadata-spawn",
+        "metadata-process-exit",
+        "metadata-output-limit",
+        "metadata-json-parse"
+    ]);
+    const vaihe = sallitutVaiheet.has(err?.vaihe) ? err.vaihe : "metadata-unknown";
+
+    return {
+        virheenVaihe: vaihe,
+        virheluokka: virheenLuokka(err),
+        exitCode: Number.isInteger(err?.exitCode) ? err.exitCode : null,
+        ...ytdlp.stderrDiagnostiikka(err?.stderr ?? err?.yksityiskohta)
+    };
+}
+
 function onTunnettuHakuvirhe(err) {
     return YTDLP_HAKUVIRHEET.has(err?.message) || PROSESSIN_HAKUVIRHEET.has(err?.code);
 }
@@ -94,8 +119,7 @@ async function haeTekstiLahteesta(teksti, { pyytaja, lahde, asetukset, hakuId })
 
     try {
         const data = await ytdlp.tiedot(tapahtuma, { lista: false });
-        const merkinnat = Array.isArray(data.entries) ? data.entries : [data];
-        const kaikki = merkinnat.filter(Boolean)
+        const kaikki = tietueet(data)
             .map(e => ytdlpKappale(e, { pyytaja, hakulahde: lahde }))
             .filter(Boolean);
         const { kelvolliset, hylatty } = suodata(kaikki, asetukset);
@@ -110,8 +134,9 @@ async function haeTekstiLahteesta(teksti, { pyytaja, lahde, asetukset, hakuId })
         return { kappaleet: jarjestaOsumat(teksti, kelvolliset).slice(0, HAKU_TULOSTEN_MAARA), hylatty };
     } catch (err) {
         lokitaHaku(hakuId, "lahde-virhe", {
-            lahde,
-            virhe: virheenLuokka(err),
+            syote: "hakusana",
+            lahde: lahde === "soundcloud" ? "SoundCloud" : "YouTube",
+            ...ytdlpDiagnostiikka(err),
             kestoMs: Date.now() - alku
         });
         throw err;
@@ -177,6 +202,11 @@ function siivoa(teksti, max = 150) {
     return String(teksti ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 }
 
+function tietueet(data) {
+    if (Array.isArray(data?.entries)) return data.entries.filter(Boolean);
+    return data && typeof data === "object" ? [data] : [];
+}
+
 /**
  * @typedef {object} Kappale
  * @property {string} otsikko
@@ -190,18 +220,28 @@ function siivoa(teksti, max = 150) {
  */
 
 function ytdlpKappale(e, { pyytaja, hakulahde }) {
-    const url = [e.webpage_url, e.url].find(u => typeof u === "string" && /^https?:\/\//.test(u))
-        ?? (e.ie_key === "Youtube" && e.id ? `https://www.youtube.com/watch?v=${e.id}` : null);
+    const url = [e.webpage_url, e.permalink_url, e.url]
+        .find(u => typeof u === "string" && /^https?:\/\//.test(u))
+        ?? (/youtube/i.test(String(e.ie_key ?? e.extractor_key ?? "")) && e.id
+            ? `https://www.youtube.com/watch?v=${e.id}`
+            : null);
 
     if (!url) return null;
 
     const kuvat = Array.isArray(e.thumbnails) ? e.thumbnails : [];
     const kuva = e.thumbnail ?? kuvat.at(-1)?.url ?? null;
     const lahde = siivoa(e.extractor_key ?? e.ie_key ?? "", 30).replace(/Youtube/i, "YouTube") || "Verkko";
+    const otsikko = [e.track, e.title].find(arvo => typeof arvo === "string" && arvo.trim()) ?? "Tuntematon kappale";
+    const artisti = [
+        e.artist,
+        ...(Array.isArray(e.artists) ? e.artists : []),
+        e.uploader,
+        e.channel
+    ].find(arvo => typeof arvo === "string" && arvo.trim());
 
     return {
-        otsikko: siivoa(e.track ?? e.title ?? "Tuntematon kappale"),
-        artisti: siivoa(e.artist ?? e.uploader ?? e.channel ?? "", 80) || null,
+        otsikko: siivoa(otsikko),
+        artisti: siivoa(artisti ?? "", 80) || null,
         kesto: Number.isFinite(e.duration) ? Math.round(e.duration) : null,
         url,
         kuva: typeof kuva === "string" ? kuva : null,
@@ -367,12 +407,14 @@ async function haeKappaleet(syote, { pyytaja, hakulahde, asetukset }) {
         try {
             data = await ytdlp.tiedot(url.href, { lista, max: asetukset.maxLista });
         } catch (err) {
-            lokitaHaku(hakuId, "linkki-virhe", { virhe: virheenLuokka(err) });
+            lokitaHaku(hakuId, "linkki-virhe", {
+                syote: "linkki",
+                lahde: lahteenNimi(url),
+                ...ytdlpDiagnostiikka(err)
+            });
             throw muunnettuYtdlpVirhe(err);
         }
-        const merkinnat = Array.isArray(data.entries) ? data.entries : [data];
-
-        const kaikki = merkinnat.filter(Boolean).map(e => ytdlpKappale(e, { pyytaja, hakulahde: haku })).filter(Boolean);
+        const kaikki = tietueet(data).map(e => ytdlpKappale(e, { pyytaja, hakulahde: haku })).filter(Boolean);
         const { kelvolliset, hylatty } = suodata(kaikki, asetukset);
         lokitaHaku(hakuId, "linkki-valmis", { tuloksia: kelvolliset.length, hylatty });
 
@@ -447,16 +489,33 @@ function muunnettuYtdlpVirhe(err) {
         if (k.includes("sign in") || k.includes("not a bot")) {
             return new MusiikkiVirhe("YouTube esti haun palvelimelta (kirjautumisvaatimus). Ylläpito voi lisätä evästeet (YTDLP_COOKIES) tai kokeilla SoundCloud-hakua.");
         }
-        if (k.includes("private video") || k.includes("this is a private video")) {
-            return new MusiikkiVirhe("Video on yksityinen eikä sitä voi soittaa.");
+        if (/private (video|track)|this (video|track) is private/.test(k)) {
+            return new MusiikkiVirhe("Kappale on yksityinen eikä sitä voi soittaa.");
         }
-        if (k.includes("removed by the uploader") || k.includes("video has been removed") || k.includes("has been deleted")) {
-            return new MusiikkiVirhe("Video on poistettu eikä sitä voi soittaa.");
+        if (/removed by the uploader|(?:video|track) has been removed|has been deleted/.test(k)) {
+            return new MusiikkiVirhe("Kappale on poistettu eikä sitä voi soittaa.");
+        }
+        if (/geo.?restricted|not available in your (country|region)|country is blocked/.test(k)) {
+            return new MusiikkiVirhe("Kappale ei ole saatavilla tällä alueella.");
+        }
+        if (/age.?restricted|confirm your age/.test(k)) {
+            return new MusiikkiVirhe("Kappaleen ikärajoitus estää sen hakemisen.");
+        }
+        if (/requested format is not available|no video formats found|no formats found/.test(k)) {
+            return new MusiikkiVirhe("Lähde ei tarjoa tälle kappaleelle soittokelpoista ääntä. Kokeile toista versiota.");
+        }
+        if (/http error 401|http error 403|forbidden|authentication required|login required/.test(k)) {
+            return new MusiikkiVirhe("Musiikin lähde esti pyynnön tai vaatii kirjautumisen. Kokeile myöhemmin tai toista versiota.");
+        }
+        if (/timed out|timeout|temporary failure|connection reset|unable to download webpage|network is unreachable|name resolution/.test(k)) {
+            return new MusiikkiVirhe("Yhteys musiikin lähteeseen epäonnistui. Yritä myöhemmin uudelleen.");
         }
         if (k.includes("unavailable") || k.includes("not available")) {
-            return new MusiikkiVirhe("Video ei ole saatavilla. Tarkista linkki.");
+            return new MusiikkiVirhe("Kappale ei ole saatavilla. Tarkista linkki tai kokeile toista versiota.");
         }
-        return new MusiikkiVirhe("Kappaleen tietoja ei saatu haettua. Tarkista linkki tai kokeile toista hakua.");
+        const virhe = new MusiikkiVirhe("Kappaleen tietoja ei saatu haettua. Tarkista linkki tai kokeile toista hakua.");
+        virhe.cause = err;
+        return virhe;
     }
     return err;
 }

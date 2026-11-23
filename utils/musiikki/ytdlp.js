@@ -2,13 +2,84 @@
 const fs = require("fs");
 const path = require("path");
 const { spawn, execFile } = require("child_process");
+const { Transform } = require("stream");
 
 const BIN_KANSIO = path.join(process.cwd(), "bin");
 const JULKAISU_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/";
 const JSON_MAX_TAVUA = 20 * 1024 * 1024;
+const STDERR_MAX_MERKKIA = 500;
 
 let loydetty = null;
 let etsinta = null;
+
+function turvallinenDiagnostiikkaTeksti(teksti) {
+    return String(teksti ?? "")
+        .replace(/https?:\/\/[^\s"'<>]+/gi, "[URL]")
+        .replace(/\b([A-Z_][A-Z0-9_]{2,})\s*=\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/g, "$1=[REDACTED]")
+        .replace(/\b((?:YTDLP_)?[A-Z0-9_]*(?:TOKEN|COOKIE|SECRET|PASSWORD|API[_-]?KEY|PROXY)[A-Z0-9_]*)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi, "$1=[REDACTED]")
+        .replace(/\b(authorization|cookie|set-cookie|token|access[_-]?token|refresh[_-]?token|password|secret|api[_-]?key)\b\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi, "$1=[REDACTED]")
+        .replace(/\bBearer\s+\S+/gi, "Bearer [REDACTED]")
+        .replace(/--cookies?(?:-from-browser)?(?:\s+|=)(?:"[^"]*"|'[^']*'|\S+)/gi, "--cookies [REDACTED]")
+        .replace(/\b[A-Z]:\\(?:[^\\\s"'<>]+\\)*[^\\\s"'<>]*/g, "[PATH]")
+        .replace(/(^|[\s=:])\/(?:[^/\s"'<>]+\/)*[^/\s"'<>]*/g, "$1[PATH]")
+        .slice(-STDERR_MAX_MERKKIA);
+}
+
+function stderrDiagnostiikka(teksti) {
+    const k = String(teksti ?? "").toLowerCase();
+    let stderrLuokka = "luokittelematon";
+
+    if (!k.trim()) stderrLuokka = "ei-stderr";
+    else if (/sign in|not a bot|authentication required|login required/.test(k)) stderrLuokka = "kirjautuminen";
+    else if (/private (video|track)|this (video|track) is private/.test(k)) stderrLuokka = "yksityinen";
+    else if (/removed by the uploader|(?:video|track) has been removed|has been deleted/.test(k)) stderrLuokka = "poistettu";
+    else if (/geo.?restricted|not available in your (country|region)|country is blocked/.test(k)) stderrLuokka = "alue-estetty";
+    else if (/age.?restricted|confirm your age/.test(k)) stderrLuokka = "ikarajoitus";
+    else if (/requested format is not available|no video formats found|no formats found/.test(k)) stderrLuokka = "formaatti";
+    else if (/http error 401|http error 403|forbidden/.test(k)) stderrLuokka = "esto";
+    else if (/timed out|timeout/.test(k)) stderrLuokka = "aikakatkaisu";
+    else if (/temporary failure|connection reset|unable to download webpage|network is unreachable|name resolution/.test(k)) stderrLuokka = "verkko";
+    else if (/unavailable|not available/.test(k)) stderrLuokka = "ei-saatavilla";
+
+    const kuvaukset = {
+        "ei-stderr": "yt-dlp ei palauttanut virhetekstiä",
+        kirjautuminen: "lähde edellyttää kirjautumista",
+        yksityinen: "sisältö on yksityinen",
+        poistettu: "sisältö on poistettu",
+        "alue-estetty": "sisältö ei ole saatavilla alueella",
+        ikarajoitus: "sisällön ikärajoitus estää haun",
+        formaatti: "soittokelpoista formaattia ei löytynyt",
+        esto: "lähde esti pyynnön",
+        aikakatkaisu: "lähde ei vastannut aikarajan sisällä",
+        verkko: "yhteys lähteeseen epäonnistui",
+        "ei-saatavilla": "sisältö ei ole saatavilla",
+        luokittelematon: "yt-dlp palautti luokittelemattoman virhetekstin"
+    };
+
+    return { stderrLuokka, stderrKuvaus: kuvaukset[stderrLuokka] };
+}
+
+function luoYtdlpVirhe({ message = "YTDLP_VIRHE", vaihe, exitCode = null, stderr = "", cause = null, syy = "" } = {}) {
+    const virhe = new Error(message);
+    if (cause) virhe.cause = cause;
+    virhe.vaihe = vaihe;
+    virhe.exitCode = Number.isInteger(exitCode) ? exitCode : null;
+    virhe.stderr = turvallinenDiagnostiikkaTeksti(stderr);
+    virhe.yksityiskohta = virhe.stderr;
+    Object.assign(virhe, stderrDiagnostiikka(virhe.stderr));
+    virhe.syy = turvallinenDiagnostiikkaTeksti(syy || cause?.message || "");
+    return virhe;
+}
+
+function lisaaProsessivirheenDiagnostiikka(virhe, vaihe, stderr = "") {
+    virhe.vaihe = vaihe;
+    virhe.exitCode = null;
+    virhe.stderr = turvallinenDiagnostiikkaTeksti(stderr);
+    virhe.yksityiskohta = virhe.stderr;
+    Object.assign(virhe, stderrDiagnostiikka(virhe.stderr));
+    virhe.syy = turvallinenDiagnostiikkaTeksti(`yt-dlp-prosessi ei käynnistynyt (${virhe.code ?? virhe.name})`);
+    return virhe;
+}
 
 function testaaBinaari(polku) {
     return new Promise(resolve => {
@@ -165,7 +236,12 @@ async function tiedot(kohde, { lista = false, max = 1, aikarajaMs = 30000 } = {}
             proc.kill("SIGKILL");
             if (!valmis) {
                 valmis = true;
-                reject(new Error("YTDLP_AIKAKATKAISU"));
+                reject(luoYtdlpVirhe({
+                    message: "YTDLP_AIKAKATKAISU",
+                    vaihe: "metadata-timeout",
+                    stderr: virheTeksti,
+                    syy: "yt-dlp-metatietahaku ylitti aikarajan"
+                }));
             }
         }, aikarajaMs);
 
@@ -183,7 +259,7 @@ async function tiedot(kohde, { lista = false, max = 1, aikarajaMs = 30000 } = {}
             clearTimeout(ajastin);
             if (valmis) return;
             valmis = true;
-            reject(err);
+            reject(lisaaProsessivirheenDiagnostiikka(err, "metadata-spawn", virheTeksti));
         });
 
         proc.on("close", koodi => {
@@ -192,15 +268,25 @@ async function tiedot(kohde, { lista = false, max = 1, aikarajaMs = 30000 } = {}
             valmis = true;
 
             if (koodi !== 0 || koko > JSON_MAX_TAVUA) {
-                const err = new Error("YTDLP_VIRHE");
-                err.yksityiskohta = virheTeksti.trim().split("\n").pop() ?? "";
-                return reject(err);
+                const liianSuuri = koko > JSON_MAX_TAVUA;
+                return reject(luoYtdlpVirhe({
+                    vaihe: liianSuuri ? "metadata-output-limit" : "metadata-process-exit",
+                    exitCode: koodi,
+                    stderr: virheTeksti,
+                    syy: liianSuuri ? "yt-dlp-metatietatuloste ylitti kokorajan" : `yt-dlp poistui koodilla ${koodi}`
+                }));
             }
 
             try {
                 resolve(JSON.parse(Buffer.concat(osat).toString("utf8")));
-            } catch {
-                reject(new Error("YTDLP_VIRHE"));
+            } catch (err) {
+                reject(luoYtdlpVirhe({
+                    vaihe: "metadata-json-parse",
+                    exitCode: koodi,
+                    stderr: virheTeksti,
+                    cause: err,
+                    syy: "yt-dlp-metatietojen JSON-jäsennys epäonnistui"
+                }));
             }
         });
     });
@@ -220,13 +306,36 @@ async function virta(kohde) {
     const proc = spawn(bin.polku, args, { stdio: ["ignore", "pipe", "pipe"] });
     let tavuja = 0;
     let virheTeksti = "";
+    let kaynnistynyt = false;
+    const mitattuVirta = new Transform({
+        transform(pala, koodaus, valmis) {
+            tavuja += pala.length;
+            valmis(null, pala);
+        }
+    });
 
-    proc.stdout.on("data", d => { tavuja += d.length; });
+    proc.stdout.pipe(mitattuVirta);
     proc.stderr.on("data", d => { virheTeksti = (virheTeksti + d).slice(-1000); });
-    proc.on("error", err => { virheTeksti = err.message; });
+    const kaynnistys = new Promise((resolve, reject) => {
+        proc.once("spawn", () => {
+            kaynnistynyt = true;
+            resolve();
+        });
+        proc.on("error", err => {
+            virheTeksti = err.message;
+            if (!kaynnistynyt) reject(err);
+        });
+    });
+
+    try {
+        await kaynnistys;
+    } catch (err) {
+        mitattuVirta.destroy();
+        throw err;
+    }
 
     return {
-        stream: proc.stdout,
+        stream: mitattuVirta,
         tavuja: () => tavuja,
         virhe: () => virheTeksti.trim().split("\n").pop() ?? "",
         sulje: () => {
@@ -235,8 +344,9 @@ async function virta(kohde) {
             } catch {
                 // Prosessi on jo suljettu.
             }
+            mitattuVirta.destroy();
         }
     };
 }
 
-module.exports = { loyda, tiedot, virta, julkaisunNimi };
+module.exports = { loyda, tiedot, virta, julkaisunNimi, luoYtdlpVirhe, turvallinenDiagnostiikkaTeksti, stderrDiagnostiikka };

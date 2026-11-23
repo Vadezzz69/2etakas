@@ -10,7 +10,7 @@ const VALINTA_AIKARAJA_MS = 60_000;
 function kirjaaInteractionAika(interaction, vaihe, tiedot = {}) {
     const nyt = Date.now();
     const luotuMs = interaction?.createdTimestamp;
-    console.info(`[interaction-timing] ${JSON.stringify({
+    const rivi = {
         vaihe,
         komento: "soita",
         interactionId: interaction?.id ?? null,
@@ -20,7 +20,8 @@ function kirjaaInteractionAika(interaction, vaihe, tiedot = {}) {
         luotuMs: Number.isFinite(luotuMs) ? luotuMs : null,
         viiveLuonnistaMs: Number.isFinite(luotuMs) ? nyt - luotuMs : null,
         ...tiedot
-    })}`);
+    };
+    setImmediate(() => console.info(`[interaction-timing] ${JSON.stringify(rivi)}`));
 }
 
 function rajaa(teksti, max) {
@@ -123,12 +124,28 @@ module.exports = {
 
 async execute(interaction) {
 
-    kirjaaInteractionAika(interaction, "command-execute-start");
+    const executeAlkoiMs = Date.now();
     const deferAlkoiMs = Date.now();
-    kirjaaInteractionAika(interaction, "deferReply-start");
+    let kuittaus;
     try {
-        await interaction.deferReply();
+        kuittaus = interaction.deferReply();
+    } catch (err) {
+        kirjaaInteractionAika(interaction, "deferReply-failure", {
+            executeAlkoiMs,
+            deferAlkoiMs,
+            deferKestoMs: Date.now() - deferAlkoiMs,
+            discordCode: err?.code ?? null
+        });
+        throw err;
+    }
+
+    kirjaaInteractionAika(interaction, "command-execute-start", { executeAlkoiMs });
+    kirjaaInteractionAika(interaction, "deferReply-start", { deferAlkoiMs });
+    try {
+        await kuittaus;
         kirjaaInteractionAika(interaction, "deferReply-success", {
+            executeAlkoiMs,
+            deferAlkoiMs,
             deferKestoMs: Date.now() - deferAlkoiMs,
             kuittausViiveMs: Date.now() - interaction.createdTimestamp
         });
