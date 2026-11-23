@@ -626,10 +626,10 @@ function komentoYmparisto() {
             guildId: "g1", guild, channel: tekstikanava, user: { id: "u1" },
             member: { voice: { channelId: kanavaId, channel: kanavaId === "vc1" ? vc1 : kanavaId === "vc2" ? vc2 : null } },
             options: { getString: n => valinnat[n] ?? null },
-            deferred: false, replied: false, vastaukset,
+            deferred: false, replied: false, deferCalls: 0, vastaukset,
             inGuild: () => true,
             reply: async v => { i.replied = true; vastaukset.push({ tyyppi: "reply", v }); },
-            deferReply: async () => { i.deferred = true; },
+            deferReply: async () => { i.deferred = true; i.deferCalls++; },
             editReply: async v => { vastaukset.push({ tyyppi: "editReply", v }); },
             fetchReply: async () => ({
                 createMessageComponentCollector: asetukset => {
@@ -668,6 +668,92 @@ function komentoYmparisto() {
 }
 
 const teksti = v => (typeof v === "string" ? v : v?.content ?? "");
+
+komentoTesti("/soita kuittaa interactionin ennen hakua", async () => {
+    const y = komentoYmparisto();
+    try {
+        const i = y.interaktio({ valinnat: { haku: "testi" } });
+        const jarjestys = [];
+        const alkuperainenTiedot = ytdlp.tiedot;
+        ytdlp.tiedot = async (...args) => {
+            jarjestys.push("haku");
+            assert.equal(i.deferred, true, "interaction pitää kuitata ennen hakua");
+            assert.equal(i.deferCalls, 1, "interaction kuitataan vain kerran");
+            return alkuperainenTiedot(...args);
+        };
+        const alkuperainenDefer = i.deferReply;
+        i.deferReply = async (...args) => {
+            jarjestys.push("kuittaus");
+            return alkuperainenDefer(...args);
+        };
+
+        await y.komento("soita").execute(i);
+        assert.deepEqual(jarjestys, ["kuittaus", "haku"]);
+    } finally { y.siivoa(); }
+});
+
+komentoTesti("vanhentunut interaction ei käynnistä uutta virhevastausta", async () => {
+    const tapahtuma = require("../events/interactionCreate");
+    const virheet = [];
+    const varoitukset = [];
+    const alkuperainenVirhe = console.error;
+    const alkuperainenVaroitus = console.warn;
+    let vastausyrityksia = 0;
+    const i = {
+        commandName: "soita",
+        deferred: false,
+        replied: false,
+        isChatInputCommand: () => true,
+        deferReply: async () => { throw Object.assign(new Error("Unknown interaction"), { code: 10062 }); },
+        reply: async () => { vastausyrityksia++; },
+        editReply: async () => { vastausyrityksia++; },
+        followUp: async () => { vastausyrityksia++; }
+    };
+
+    console.error = (...args) => virheet.push(args);
+    console.warn = (...args) => varoitukset.push(args);
+    try {
+        await tapahtuma.execute(i, { commands: new Map([["soita", { execute: async interaction => interaction.deferReply() }]]) });
+        assert.equal(vastausyrityksia, 0);
+        assert.equal(virheet.length, 1, "alkuperäinen interaction-virhe kirjataan");
+        assert.equal(varoitukset.length, 1, "uudelleenyrityksen ohitus kirjataan");
+    } finally {
+        console.error = alkuperainenVirhe;
+        console.warn = alkuperainenVaroitus;
+    }
+});
+
+komentoTesti("virhevastaus kirjaa vanhentuneen interactionin ilman toista yritystä", async () => {
+    const tapahtuma = require("../events/interactionCreate");
+    const virheet = [];
+    const varoitukset = [];
+    const alkuperainenVirhe = console.error;
+    const alkuperainenVaroitus = console.warn;
+    let vastausyrityksia = 0;
+    const i = {
+        commandName: "poistettu",
+        deferred: false,
+        replied: false,
+        isChatInputCommand: () => true,
+        reply: async () => {
+            vastausyrityksia++;
+            throw Object.assign(new Error("Unknown interaction"), { code: 10062 });
+        }
+    };
+
+    console.error = (...args) => virheet.push(args);
+    console.warn = (...args) => varoitukset.push(args);
+    try {
+        await tapahtuma.execute(i, { commands: new Map() });
+        assert.equal(vastausyrityksia, 1, "vanhentuneeseen interactioniin tehdään vain yksi yritys");
+        assert.equal(virheet.length, 0, "tunnettu vanhentumistilanne ei näy yleisenä virheenä");
+        assert.equal(varoitukset.length, 2, "tuntematon komento ja vanhentunut interaction kirjataan");
+        assert.match(String(varoitukset.at(-1)[0]), /vanheni/);
+    } finally {
+        console.error = alkuperainenVirhe;
+        console.warn = alkuperainenVaroitus;
+    }
+});
 
 komentoTesti("/soita ilman äänikanavaa kieltäytyy yksityisesti", async () => {
     const y = komentoYmparisto();

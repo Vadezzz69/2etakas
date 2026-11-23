@@ -18,6 +18,10 @@ async function ilmoitaVirhe(interaction, teksti) {
             await interaction.reply({ content: teksti, ephemeral: true });
         }
     } catch (err) {
+        if (Number(err?.code) === 10062) {
+            console.warn("⚠️ Interaction vanheni ennen virheilmoituksen lähettämistä.");
+            return;
+        }
         console.error("❌ Virheilmoituksen lähetys epäonnistui:", err?.message ?? err);
     }
 }
@@ -43,6 +47,10 @@ module.exports = {
         } catch (err) {
 
             console.error(`❌ Virhe komennossa /${interaction.commandName}:`, err);
+            if (Number(err?.code) === 10062) {
+                console.warn("⚠️ Interaction vanheni ennen komennon valmistumista; virhevastausta ei yritetty uudelleen.");
+                return;
+            }
             return ilmoitaVirhe(interaction, satunnainen(VIRHEVIESTIT));
 
         }
