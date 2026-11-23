@@ -8,6 +8,7 @@ const BIN_KANSIO = path.join(process.cwd(), "bin");
 const JULKAISU_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/";
 const JSON_MAX_TAVUA = 20 * 1024 * 1024;
 const STDERR_MAX_MERKKIA = 500;
+const VIRTA_ALKU_AIKARAJA_MS = 30_000;
 
 let loydetty = null;
 let etsinta = null;
@@ -323,6 +324,8 @@ async function virta(kohde) {
     let virheTeksti = "";
     let kaynnistynyt = false;
     let suljettu = false;
+    let aanivirtaValmis = false;
+    let viimeisteleKaynnistys = () => {};
     const mitattuVirta = new Transform({
         transform(pala, koodaus, valmis) {
             tavuja += pala.length;
@@ -338,15 +341,60 @@ async function virta(kohde) {
     });
 
     const kaynnistys = new Promise((resolve, reject) => {
+        let valmis = false;
+        let ajastin;
+        const viimeistele = err => {
+            if (valmis) return;
+            valmis = true;
+            clearTimeout(ajastin);
+            mitattuVirta.removeListener("readable", tarkistaAanidata);
+            if (err) reject(err);
+            else resolve();
+        };
+        const tarkistaAanidata = () => {
+            if (mitattuVirta.readableLength === 0) return;
+            aanivirtaValmis = true;
+            viimeistele();
+        };
+
+        viimeisteleKaynnistys = viimeistele;
+        mitattuVirta.on("readable", tarkistaAanidata);
+        ajastin = setTimeout(() => {
+            const virhe = luoYtdlpVirhe({
+                message: "YTDLP_AIKAKATKAISU",
+                vaihe: "stream-start-timeout",
+                stderr: virheTeksti,
+                syy: "yt-dlp ei aloittanut äänivirtaa aikarajan sisällä"
+            });
+            try {
+                proc.kill("SIGKILL");
+            } catch {
+                // Prosessi on jo suljettu.
+            }
+            viimeistele(virhe);
+        }, VIRTA_ALKU_AIKARAJA_MS);
+        ajastin.unref?.();
+
         proc.once("spawn", () => {
             kaynnistynyt = true;
-            resolve();
         });
 
         proc.on("error", err => {
             virheTeksti = err.message;
-            if (!kaynnistynyt) reject(err);
-            else if (!suljettu) mitattuVirta.destroy(err);
+            if (!kaynnistynyt) {
+                viimeistele(lisaaProsessivirheenDiagnostiikka(err, "stream-spawn", virheTeksti));
+            } else if (!suljettu) {
+                if (!aanivirtaValmis) {
+                    viimeistele(luoYtdlpVirhe({
+                        vaihe: "stream-process-error",
+                        stderr: virheTeksti,
+                        cause: err
+                    }));
+                    mitattuVirta.destroy();
+                } else {
+                    mitattuVirta.destroy(err);
+                }
+            }
         });
     });
 
@@ -354,23 +402,45 @@ async function virta(kohde) {
         if (suljettu || mitattuVirta.destroyed) return;
 
         if (koodi === 0) {
+            if (!aanivirtaValmis) {
+                viimeisteleKaynnistys(luoYtdlpVirhe({
+                    vaihe: "stream-process-exit",
+                    stderr: virheTeksti,
+                    syy: "yt-dlp sulkeutui ennen äänidatan palauttamista"
+                }));
+            }
             mitattuVirta.end();
             return;
         }
 
-        const yksityiskohta = turvallinenDiagnostiikkaTeksti(virheTeksti).trim();
-        const viesti = koodi === null
-            ? `yt-dlp-prosessi keskeytyi (${signaali || "tuntematon signaali"})`
-            : `yt-dlp poistui virhekoodilla ${koodi}`;
-        const virhe = new Error(yksityiskohta ? `${viesti}: ${yksityiskohta}` : viesti);
-        virhe.vaihe = "stream-process-exit";
-        virhe.exitCode = koodi;
-        virhe.stderr = yksityiskohta;
+        const virhe = luoYtdlpVirhe({
+            vaihe: "stream-process-exit",
+            exitCode: koodi,
+            stderr: virheTeksti,
+            syy: koodi === null
+                ? `yt-dlp-prosessi keskeytyi (${signaali || "tuntematon signaali"})`
+                : `yt-dlp poistui virhekoodilla ${koodi}`
+        });
+        if (!aanivirtaValmis) {
+            viimeisteleKaynnistys(virhe);
+            mitattuVirta.destroy();
+            return;
+        }
         mitattuVirta.destroy(virhe);
     });
 
     proc.stdout.on("error", err => {
-        if (!suljettu) mitattuVirta.destroy(err);
+        if (suljettu) return;
+        if (!aanivirtaValmis) {
+            viimeisteleKaynnistys(luoYtdlpVirhe({
+                vaihe: "stream-stdout-error",
+                stderr: virheTeksti,
+                cause: err
+            }));
+            mitattuVirta.destroy();
+            return;
+        }
+        mitattuVirta.destroy(err);
     });
 
     try {
@@ -378,6 +448,7 @@ async function virta(kohde) {
     } catch (err) {
         suljettu = true;
         mitattuVirta.destroy();
+        if (err?.message === "YTDLP_VIRHE" || err?.message === "YTDLP_AIKAKATKAISU") throw err;
         throw lisaaProsessivirheenDiagnostiikka(err, "stream-spawn", virheTeksti);
     }
 

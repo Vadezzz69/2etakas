@@ -104,7 +104,10 @@ function ilmoitus(tapahtuma, soitin) {
             return { embeds: [soiEmbed(tapahtuma.kappale, soitin.jono.length)] };
         case "virhe": {
             const kappale = V.tayta(satunnainen(V.KAPPALE_VIRHE), { otsikko: turvallinen(tapahtuma.kappale.otsikko) });
-            return { embeds: [warning({ description: kappale })] };
+            const kuvaus = tapahtuma.viesti
+                ? `${kappale}\n\n${turvallinen(tapahtuma.viesti)}`
+                : kappale;
+            return { embeds: [warning({ description: kuvaus })] };
         }
         case "jono_loppui":
             return { content: satunnainen(V.JONO_LOPPUI) };

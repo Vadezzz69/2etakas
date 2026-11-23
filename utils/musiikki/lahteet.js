@@ -84,6 +84,17 @@ function lahteenNimi(url) {
     return "muu";
 }
 
+function youtubeHakuavain(url, alkuperainenSyote) {
+    if (url.hostname.toLowerCase() === "youtu.be") {
+        const id = url.pathname.split("/").filter(Boolean)[0];
+        if (id) return id;
+    }
+
+    const id = url.searchParams.get("v") ??
+        url.pathname.match(/^\/(?:shorts|embed|live)\/([^/]+)/i)?.[1];
+    return id || alkuperainenSyote.slice(0, HAKU_MAX_PITUUS);
+}
+
 function ytdlpDiagnostiikka(err) {
     const sallitutVaiheet = new Set([
         "metadata-timeout",
@@ -258,9 +269,10 @@ function tietueet(data) {
  * @property {string} lahde            näytettävä lähde (YouTube, SoundCloud, Spotify...)
  * @property {string} hakulahde        mihin haetaan jos url puuttuu (youtube | soundcloud)
  * @property {string|null} pyytaja     käyttäjän id
+ * @property {boolean} suoraSyote      käyttäjä antoi lähdelinkin suoraan
  */
 
-function ytdlpKappale(e, { pyytaja, hakulahde }) {
+function ytdlpKappale(e, { pyytaja, hakulahde, suoraSyote = false }) {
     const url = [e.webpage_url, e.permalink_url, e.url]
         .find(u => typeof u === "string" && /^https?:\/\//.test(u))
         ?? (/youtube/i.test(String(e.ie_key ?? e.extractor_key ?? "")) && e.id
@@ -289,6 +301,7 @@ function ytdlpKappale(e, { pyytaja, hakulahde }) {
         lahde,
         hakulahde,
         pyytaja: pyytaja ?? null,
+        suoraSyote,
         suora: Boolean(e.is_live || e.live_status === "is_live")
     };
 }
@@ -443,6 +456,7 @@ async function haeKappaleet(syote, { pyytaja, hakulahde, asetukset }) {
                 lahde: "Spotify",
                 hakulahde: haku,
                 pyytaja,
+                suoraSyote: false,
                 suora: false
             }));
 
@@ -455,16 +469,66 @@ async function haeKappaleet(syote, { pyytaja, hakulahde, asetukset }) {
         try {
             data = await ytdlp.tiedot(url.href, { lista, max: asetukset.maxLista });
         } catch (err) {
+            const lahde = lahteenNimi(url);
+            const stderrLuokka = ytdlp.stderrDiagnostiikka(err?.stderr ?? err?.yksityiskohta).stderrLuokka;
             lokitaHaku(hakuId, "linkki-virhe", {
                 syote: "linkki",
                 hakutapa: "suora-linkki",
-                lahde: lahteenNimi(url),
+                lahde,
                 ...ytdlpDiagnostiikka(err),
                 kestoMs: Date.now() - alku
             });
+
+            if (
+                lahde === "YouTube" &&
+                !["yksityinen", "poistettu", "ei-saatavilla"].includes(stderrLuokka) &&
+                onTunnettuHakuvirhe(err) &&
+                !ytDlpEiKaynnisty(err)
+            ) {
+                lokitaHaku(hakuId, "varahaku-alkoi", {
+                    lahde: "soundcloud",
+                    syy: stderrLuokka
+                });
+
+                try {
+                    const varahaku = await haeTekstiLahteesta(
+                        youtubeHakuavain(url, teksti),
+                        { pyytaja, lahde: "soundcloud", asetukset, hakuId }
+                    );
+                    if (varahaku.kappaleet.length) {
+                        lokitaHaku(hakuId, "haku-valmis", {
+                            lahde: "soundcloud",
+                            tuloksia: varahaku.kappaleet.length,
+                            lopullinenTulos: "tuloksia"
+                        });
+                        return {
+                            kappaleet: varahaku.kappaleet,
+                            hylatty: varahaku.hylatty,
+                            lahde: varahaku.kappaleet[0].lahde,
+                            valittavat: true,
+                            hakuId
+                        };
+                    }
+                } catch (soundCloudVirhe) {
+                    if (!onTunnettuHakuvirhe(soundCloudVirhe)) throw soundCloudVirhe;
+                }
+
+                lokitaHaku(hakuId, "varahaku-epaonnistui", {
+                    lahde: "soundcloud",
+                    lopullinenTulos: "ei-tuloksia"
+                });
+                throw new MusiikkiVirhe(
+                    "YouTube-linkin tietoja ei saatu haettua, eikä vastaavaa kappaletta löytynyt SoundCloudista. Kokeile kappaleen nimeä."
+                );
+            }
+
             throw muunnettuYtdlpVirhe(err);
         }
-        const kaikki = tietueet(data).map(e => ytdlpKappale(e, { pyytaja, hakulahde: haku })).filter(Boolean);
+        const kaikki = tietueet(data).map(e => ytdlpKappale(e, {
+            pyytaja,
+            hakulahde: haku,
+            suoraSyote: true
+        })).filter(Boolean);
         const { kelvolliset, hylatty } = suodata(kaikki, asetukset);
         lokitaHaku(hakuId, "linkki-valmis", { tuloksia: kelvolliset.length, hylatty });
 
