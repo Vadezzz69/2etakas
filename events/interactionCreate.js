@@ -54,6 +54,20 @@ module.exports = {
 
         if (!interaction.isChatInputCommand()) return;
 
+        if (["soita", "meemi"].includes(interaction.commandName)) {
+            console.info("[interaction-compare] " + JSON.stringify({
+                command: interaction.commandName,
+                commandId: interaction.commandId ?? null,
+                applicationId: interaction.applicationId ?? null,
+                guildId: interaction.guildId ?? null,
+                channelId: interaction.channelId ?? null,
+                createdTimestamp: interaction.createdTimestamp ?? null,
+                context: interaction.context ?? null,
+                version: interaction.version ?? null,
+                tokenPresent: Boolean(interaction.token)
+            }));
+        }
+
         if (onSoita && process.env.SOITA_REST_DIAGNOSTIIKKA !== "1") {
             const clientApplicationId = client.application?.id;
             console.info("[soita-identity] " + JSON.stringify({
