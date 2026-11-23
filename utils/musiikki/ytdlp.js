@@ -322,6 +322,7 @@ async function virta(kohde) {
     let tavuja = 0;
     let virheTeksti = "";
     let kaynnistynyt = false;
+    let suljettu = false;
     const mitattuVirta = new Transform({
         transform(pala, koodaus, valmis) {
             tavuja += pala.length;
@@ -329,31 +330,64 @@ async function virta(kohde) {
         }
     });
 
-    proc.stdout.pipe(mitattuVirta);
-    proc.stderr.on("data", d => { virheTeksti = (virheTeksti + d).slice(-1000); });
+    // stdout ei saa päättää Transform-virtaa ennen kuin tiedämme yt-dlp:n
+    // poistumiskoodin. Muuten myöhempi prosessivirhe jäisi soittimelta piiloon.
+    proc.stdout.pipe(mitattuVirta, { end: false });
+    proc.stderr.on("data", d => {
+        virheTeksti = (virheTeksti + d).slice(-2000);
+    });
+
     const kaynnistys = new Promise((resolve, reject) => {
         proc.once("spawn", () => {
             kaynnistynyt = true;
             resolve();
         });
+
         proc.on("error", err => {
             virheTeksti = err.message;
             if (!kaynnistynyt) reject(err);
+            else if (!suljettu) mitattuVirta.destroy(err);
         });
+    });
+
+    proc.once("close", (koodi, signaali) => {
+        if (suljettu || mitattuVirta.destroyed) return;
+
+        if (koodi === 0) {
+            mitattuVirta.end();
+            return;
+        }
+
+        const yksityiskohta = turvallinenDiagnostiikkaTeksti(virheTeksti).trim();
+        const viesti = koodi === null
+            ? `yt-dlp-prosessi keskeytyi (\${signaali || "tuntematon signaali"})`
+            : `yt-dlp poistui virhekoodilla \${koodi}`;
+        const virhe = new Error(yksityiskohta ? `\${viesti}: \${yksityiskohta}` : viesti);
+        virhe.vaihe = "stream-process-exit";
+        virhe.exitCode = koodi;
+        virhe.stderr = yksityiskohta;
+        mitattuVirta.destroy(virhe);
+    });
+
+    proc.stdout.on("error", err => {
+        if (!suljettu) mitattuVirta.destroy(err);
     });
 
     try {
         await kaynnistys;
     } catch (err) {
+        suljettu = true;
         mitattuVirta.destroy();
-        throw err;
+        throw lisaaProsessivirheenDiagnostiikka(err, "stream-spawn", virheTeksti);
     }
 
     return {
         stream: mitattuVirta,
         tavuja: () => tavuja,
-        virhe: () => virheTeksti.trim().split("\n").pop() ?? "",
+        virhe: () => turvallinenDiagnostiikkaTeksti(virheTeksti).trim().split("\n").pop() ?? "",
         sulje: () => {
+            if (suljettu) return;
+            suljettu = true;
             try {
                 proc.kill("SIGKILL");
             } catch {
