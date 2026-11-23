@@ -665,6 +665,32 @@ testi("yt-dlp-virheet muutetaan käyttäjäystävällisiksi viesteiksi", async (
     }
 });
 
+testi("SoundCloudin yt-dlp-virheet luokitellaan ilman stderr-raakatekstiä", () => {
+    const tapaukset = [
+        ["ERROR: yt-dlp: unrecognized arguments: --bad-option", "luokittelematon", "yt-dlp palautti luokittelemattoman virhetekstin", "komentorivi-argumentti"],
+        ["ERROR: No supported JavaScript runtime found; EJS challenge solving failed", "luokittelematon", "yt-dlp palautti luokittelemattoman virhetekstin", "javascript-runtime-ejs"],
+        ["ERROR: Unsupported URL: ytsearch5:sample query", "luokittelematon", "yt-dlp palautti luokittelemattoman virhetekstin", "hakuextractor"],
+        ["ERROR: Cookies are invalid or expired", "luokittelematon", "yt-dlp palautti luokittelemattoman virhetekstin", "evaste-kirjautuminen"],
+        ["ERROR: HTTP Error 500: Internal Server Error", "luokittelematon", "yt-dlp palautti luokittelemattoman virhetekstin", "verkko-http"],
+        ["ERROR: Sign in to confirm your account", "kirjautuminen", "lähde edellyttää kirjautumista", "evaste-kirjautuminen"],
+        ["ERROR: HTTP Error 403: Forbidden", "kayttooikeusrajoitus", "lähde esti sisällön käytön", "verkko-http"],
+        ["ERROR: This track is private", "yksityinen", "sisältö on yksityinen", "tuntematon"],
+        ["ERROR: This track has been removed", "poistettu", "sisältö on poistettu", "tuntematon"],
+        ["ERROR: HTTP Error 429: Too Many Requests", "rate-limit", "lähde rajoitti pyyntöjen määrää", "verkko-http"],
+        ["ERROR: Connection reset by peer", "verkko", "yhteys lähteeseen epäonnistui", "verkko-http"],
+        ["ERROR: [soundcloud] track-id-987 https://soundcloud.com/artist/track?token=secret", "luokittelematon", "yt-dlp palautti luokittelemattoman virhetekstin", "tuntematon"]
+    ];
+
+    for (const [stderr, luokka, kuvaus, tyyppi] of tapaukset) {
+        const diagnostiikka = ytdlp.stderrDiagnostiikka(stderr);
+        assert.deepEqual(diagnostiikka, { stderrLuokka: luokka, stderrKuvaus: kuvaus, diagnostiikkaTyyppi: tyyppi });
+        const tuloste = JSON.stringify(diagnostiikka);
+        assert.equal(tuloste.includes(stderr), false, "raaka stderr ei päädy luokittelun tulokseen");
+        assert.equal(tuloste.includes("track-id-987"), false);
+        assert.equal(tuloste.includes("secret"), false);
+    }
+});
+
 testi("suoran linkin yt-dlp-virhe säilyy turvallisessa diagnostiikassa", async () => {
     const alkuperainenTiedot = ytdlp.tiedot;
     const alkuperainenInfo = console.info;
@@ -696,6 +722,7 @@ testi("suoran linkin yt-dlp-virhe säilyy turvallisessa diagnostiikassa", async 
         assert.ok(virherivi, "suoran linkin diagnostinen virherivi löytyi");
         const rivi = JSON.parse(virherivi.slice("[musiikki-haku] ".length));
         assert.equal(rivi.syote, "linkki");
+        assert.equal(rivi.hakutapa, "suora-linkki");
         assert.equal(rivi.lahde, "YouTube");
         assert.equal(rivi.vaihe, "linkki-virhe");
         assert.equal(rivi.virheenVaihe, "metadata-process-exit");
@@ -703,6 +730,8 @@ testi("suoran linkin yt-dlp-virhe säilyy turvallisessa diagnostiikassa", async 
         assert.equal(rivi.exitCode, 2);
         assert.equal(rivi.stderrLuokka, "luokittelematon");
         assert.equal(rivi.stderrKuvaus, "yt-dlp palautti luokittelemattoman virhetekstin");
+        assert.equal(rivi.diagnostiikkaTyyppi, "tuntematon");
+        assert.ok(Number.isFinite(rivi.kestoMs) && rivi.kestoMs >= 0);
         assert.equal("stderr" in rivi, false, "raaka stderr ei päädy lokiin");
         for (const salaisuus of ["user:pass", "secret-id", "url-secret", "inline-secret", "cookies.txt", "proxy-secret", "cause-secret"]) {
             assert.equal(JSON.stringify(rivi).includes(salaisuus), false, `loki ei saa sisältää arvoa ${salaisuus}`);
@@ -761,9 +790,12 @@ testi("tekstihaku lokittaa YouTube- ja SoundCloud-virheet erikseen ja jatkaa seu
             .map(teksti => JSON.parse(teksti.slice("[musiikki-haku] ".length)));
         assert.equal(virherivit.length, 2);
         assert.equal(virherivit[0].hakuId, virherivit[1].hakuId);
+        assert.ok(virherivit.every(rivi => rivi.hakutapa === "hakusana"));
         assert.deepEqual(virherivit.map(rivi => rivi.lahde), ["YouTube", "SoundCloud"]);
         assert.deepEqual(virherivit.map(rivi => rivi.exitCode), [17, 23]);
-        assert.deepEqual(virherivit.map(rivi => rivi.stderrLuokka), ["kirjautuminen", "esto"]);
+        assert.deepEqual(virherivit.map(rivi => rivi.stderrLuokka), ["kirjautuminen", "kayttooikeusrajoitus"]);
+        assert.deepEqual(virherivit.map(rivi => rivi.diagnostiikkaTyyppi), ["evaste-kirjautuminen", "verkko-http"]);
+        assert.ok(virherivit.every(rivi => Number.isFinite(rivi.kestoMs) && rivi.kestoMs >= 0));
         assert.ok(virherivit.every(rivi => rivi.virheenVaihe === "metadata-process-exit"));
         assert.ok(virherivit.every(rivi => !("stderr" in rivi)));
 
@@ -773,7 +805,7 @@ testi("tekstihaku lokittaa YouTube- ja SoundCloud-virheet erikseen ja jatkaa seu
         assert.deepEqual(pyydetyt.map(haku => haku.split(":")[0]), ["ytsearch5", "scsearch5", "ytsearch5"]);
 
         const kaikkiLokit = lokit.join("\n");
-        for (const salaisuus of ["dQw4w9WgXcQ", "video-secret", "artist-track-987", "track-secret"]) {
+        for (const salaisuus of ["ensimmainen kappale", "dQw4w9WgXcQ", "video-secret", "artist-track-987", "track-secret"]) {
             assert.equal(kaikkiLokit.includes(salaisuus), false, `lokissa ei saa näkyä arvoa ${salaisuus}`);
         }
     } finally {

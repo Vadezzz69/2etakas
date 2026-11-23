@@ -28,35 +28,50 @@ function turvallinenDiagnostiikkaTeksti(teksti) {
 function stderrDiagnostiikka(teksti) {
     const k = String(teksti ?? "").toLowerCase();
     let stderrLuokka = "luokittelematon";
+    let diagnostiikkaTyyppi = "tuntematon";
 
     if (!k.trim()) stderrLuokka = "ei-stderr";
-    else if (/sign in|not a bot|authentication required|login required/.test(k)) stderrLuokka = "kirjautuminen";
+    else if (/sign in|not a bot|authentication required|login required|please log in|must be logged in|not logged in|requires authentication/.test(k)) stderrLuokka = "kirjautuminen";
+    else if (/http error 429|\b429\b|too many requests|rate[- ]limit|throttl/.test(k)) stderrLuokka = "rate-limit";
     else if (/private (video|track)|this (video|track) is private/.test(k)) stderrLuokka = "yksityinen";
-    else if (/removed by the uploader|(?:video|track) has been removed|has been deleted/.test(k)) stderrLuokka = "poistettu";
+    else if (/removed by the uploader|(?:video|track) (?:has been|was) removed|(?:video|track) has been deleted|has been deleted|track not found/.test(k)) stderrLuokka = "poistettu";
+    else if (/http error 401|http error 403|\b401\b|\b403\b|forbidden|access denied|unauthorized|permission denied|not authorized/.test(k)) stderrLuokka = "kayttooikeusrajoitus";
     else if (/geo.?restricted|not available in your (country|region)|country is blocked/.test(k)) stderrLuokka = "alue-estetty";
     else if (/age.?restricted|confirm your age/.test(k)) stderrLuokka = "ikarajoitus";
     else if (/requested format is not available|no video formats found|no formats found/.test(k)) stderrLuokka = "formaatti";
-    else if (/http error 401|http error 403|forbidden/.test(k)) stderrLuokka = "esto";
     else if (/timed out|timeout/.test(k)) stderrLuokka = "aikakatkaisu";
-    else if (/temporary failure|connection reset|unable to download webpage|network is unreachable|name resolution/.test(k)) stderrLuokka = "verkko";
+    else if (/temporary failure|connection reset|connection refused|connection aborted|unable to download webpage|network is unreachable|name resolution|connection error|ssl error|tls error|max retries exceeded|no route to host/.test(k)) stderrLuokka = "verkko";
     else if (/unavailable|not available/.test(k)) stderrLuokka = "ei-saatavilla";
+
+    if (/usage: yt-dlp|no such option|unrecognized arguments|unknown option|expected (?:one|at least) argument|invalid choice|not enough arguments|option .+ requires an argument/.test(k)) {
+        diagnostiikkaTyyppi = "komentorivi-argumentti";
+    } else if (/javascript runtime|js runtime|ejs|remote component|signature (?:extraction|solving)|challenge solving|no supported javascript runtime/.test(k)) {
+        diagnostiikkaTyyppi = "javascript-runtime-ejs";
+    } else if (/(?:invalid|expired|corrupt|failed|unsupported|unable|not found|required|missing)(?: to load| to read| to use)? (?:the )?(?:cookies?|cookie jar)|(?:cookies?|cookie jar) (?:are|is|was|were) (?:invalid|expired|corrupt|not supported|missing|required)|(?:cookie|cookies) (?:file|jar) (?:is|was) (?:invalid|expired|missing|unreadable)|invalid cookie|sign in|not a bot|authentication required|login required|please log in|must be logged in|not logged in|requires authentication/.test(k)) {
+        diagnostiikkaTyyppi = "evaste-kirjautuminen";
+    } else if (/search extractor|ytsearch|scsearch|no suitable extractor|unable to extract.*search|unsupported url/.test(k)) {
+        diagnostiikkaTyyppi = "hakuextractor";
+    } else if (/http error|http status|http [45]\d\d|\b429\b|too many requests|rate[- ]limit|network|connection|timed out|timeout|temporary failure|name resolution|ssl error|tls error|proxy (?:error|failure|failed|refused|unavailable)/.test(k)) {
+        diagnostiikkaTyyppi = "verkko-http";
+    }
 
     const kuvaukset = {
         "ei-stderr": "yt-dlp ei palauttanut virhetekstiä",
         kirjautuminen: "lähde edellyttää kirjautumista",
+        "rate-limit": "lähde rajoitti pyyntöjen määrää",
         yksityinen: "sisältö on yksityinen",
         poistettu: "sisältö on poistettu",
+        kayttooikeusrajoitus: "lähde esti sisällön käytön",
         "alue-estetty": "sisältö ei ole saatavilla alueella",
         ikarajoitus: "sisällön ikärajoitus estää haun",
         formaatti: "soittokelpoista formaattia ei löytynyt",
-        esto: "lähde esti pyynnön",
         aikakatkaisu: "lähde ei vastannut aikarajan sisällä",
         verkko: "yhteys lähteeseen epäonnistui",
         "ei-saatavilla": "sisältö ei ole saatavilla",
         luokittelematon: "yt-dlp palautti luokittelemattoman virhetekstin"
     };
 
-    return { stderrLuokka, stderrKuvaus: kuvaukset[stderrLuokka] };
+    return { stderrLuokka, stderrKuvaus: kuvaukset[stderrLuokka], diagnostiikkaTyyppi };
 }
 
 function luoYtdlpVirhe({ message = "YTDLP_VIRHE", vaihe, exitCode = null, stderr = "", cause = null, syy = "" } = {}) {

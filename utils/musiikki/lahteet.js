@@ -135,6 +135,7 @@ async function haeTekstiLahteesta(teksti, { pyytaja, lahde, asetukset, hakuId })
     } catch (err) {
         lokitaHaku(hakuId, "lahde-virhe", {
             syote: "hakusana",
+            hakutapa: "hakusana",
             lahde: lahde === "soundcloud" ? "SoundCloud" : "YouTube",
             ...ytdlpDiagnostiikka(err),
             kestoMs: Date.now() - alku
@@ -404,13 +405,16 @@ async function haeKappaleet(syote, { pyytaja, hakulahde, asetukset }) {
 
         const lista = onListaUrl(url);
         let data;
+        const alku = Date.now();
         try {
             data = await ytdlp.tiedot(url.href, { lista, max: asetukset.maxLista });
         } catch (err) {
             lokitaHaku(hakuId, "linkki-virhe", {
                 syote: "linkki",
+                hakutapa: "suora-linkki",
                 lahde: lahteenNimi(url),
-                ...ytdlpDiagnostiikka(err)
+                ...ytdlpDiagnostiikka(err),
+                kestoMs: Date.now() - alku
             });
             throw muunnettuYtdlpVirhe(err);
         }
