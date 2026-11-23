@@ -3,8 +3,9 @@ const { kirjaaKomento } = require("../utils/tilastot");
 const { satunnainen } = require("../utils/satunnainen");
 const { VIRHEVIESTIT, VANHAT_KOMENNOT } = require("../utils/comedy/data/viestit");
 
-// Estää saman interaktio-olion käsittelyn kahdesti saman prosessin sisällä.
-const kasitellytInteraktiot = new WeakSet();
+// Tunnistaa saman Discord-interaktion myös silloin, jos siitä syntyy uusi olio.
+const kasitellytInteraktiot = new Map();
+const INTERAKTION_SAILYTYSAIKA_MS = 15 * 60 * 1000;
 
 function kirjaaInteractionAika(interaction, vaihe, tiedot = {}) {
     if (process.env.SOITA_REST_DIAGNOSTIIKKA === "1") return;
@@ -57,17 +58,23 @@ module.exports = {
 
         if (!interaction.isChatInputCommand()) return;
 
-        if (kasitellytInteraktiot.has(interaction)) {
+        const nyt = Date.now();
+        for (const [id, aikaleima] of kasitellytInteraktiot) {
+            if (nyt - aikaleima > INTERAKTION_SAILYTYSAIKA_MS) kasitellytInteraktiot.delete(id);
+        }
+
+        if (kasitellytInteraktiot.has(interaction.id)) {
             console.warn("[interaction-duplicate] " + JSON.stringify({
                 command: interaction.commandName,
                 interactionId: interaction.id,
+                firstSeenAt: kasitellytInteraktiot.get(interaction.id),
                 pid: process.pid,
                 deferred: interaction.deferred,
                 replied: interaction.replied
             }));
             return;
         }
-        kasitellytInteraktiot.add(interaction);
+        kasitellytInteraktiot.set(interaction.id, nyt);
 
         if (["soita", "meemi"].includes(interaction.commandName)) {
             console.info("[interaction-compare] " + JSON.stringify({
