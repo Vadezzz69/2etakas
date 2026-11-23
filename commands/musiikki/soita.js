@@ -184,7 +184,7 @@ async function valitseHakutulos(interaction, haku) {
                 }
 
                 await valinta.deferUpdate();
-                await interaction.editReply({ content: null, components: [] });
+                await interaction.editReply({ content: "Lisätään kappaletta jonoon...", components: [] });
                 console.info(`[musiikki-haku] ${JSON.stringify({ hakuId: haku.hakuId, vaihe: "tulos-valittu", lahde: haku.kappaleet[indeksi].lahde, tulos: indeksi + 1 })}`);
                 aseta(haku.kappaleet[indeksi]);
             } catch (err) {
