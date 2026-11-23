@@ -1,4 +1,5 @@
 const { ActionRowBuilder, ComponentType, SlashCommandBuilder, StringSelectMenuBuilder } = require("discord.js");
+const { AsyncLocalStorage } = require("node:async_hooks");
 const { randomUUID } = require("node:crypto");
 const { haeKappaleet, MusiikkiVirhe } = require("../../utils/musiikki/lahteet");
 const { asetukset } = require("../../utils/musiikki/config");
@@ -7,6 +8,7 @@ const { lisattyEmbed } = require("../../utils/musiikki/muotoilu");
 
 const VALINTA_AIKARAJA_MS = 60_000;
 const REST_DIAGNOSTIIKKA_ENV = "SOITA_REST_DIAGNOSTIIKKA";
+const restDiagnostiikkaContext = new AsyncLocalStorage();
 let restDiagnostiikkaKaytetty = false;
 
 function kirjaaInteractionAika(interaction, vaihe, tiedot = {}) {
@@ -36,48 +38,73 @@ function aloitaRestDiagnostiikka(interaction) {
     if (typeof alkuperainenMakeRequest !== "function") return null;
 
     restDiagnostiikkaKaytetty = true;
-    const odotettuId = interaction.id;
-    const odotettuToken = interaction.token;
-    const pyynnot = [];
+    const context = {
+        interactionId: interaction.id,
+        interactionToken: interaction.token,
+        result: null
+    };
 
-    const tarkkailevaMakeRequest = async function (url, init) {
-        let tiedot;
+    const tarkkailevaMakeRequest = function (url, init) {
+        if (restDiagnostiikkaContext.getStore() !== context) {
+            return Reflect.apply(alkuperainenMakeRequest, this, arguments);
+        }
+
+        let osat = [];
         try {
-            const osat = new URL(url).pathname.split("/").filter(Boolean);
-            if (osat.includes("interactions") && osat.at(-1) === "callback") {
-                const loppuosa = osat.slice(-4);
-                tiedot = {
-                    methodMatchesPost: init?.method === "POST",
-                    callbackRouteMatches: loppuosa.length === 4 &&
-                        loppuosa[0] === "interactions" &&
-                        Boolean(loppuosa[1]) &&
-                        Boolean(loppuosa[2]) &&
-                        loppuosa[3] === "callback",
-                    apiVersionIsV10: osat.at(-5) === "v10",
-                    interactionIdMatches: loppuosa[1] === odotettuId,
-                    interactionTokenMatches: loppuosa[2] === odotettuToken,
-                    httpStatus: null
-                };
-                pyynnot.push(tiedot);
-            }
+            osat = new URL(url).pathname.split("/").filter(Boolean);
         } catch {
-            tiedot = undefined;
+            context.result = {
+                methodMatchesPost: init?.method === "POST",
+                callbackRouteMatches: false,
+                apiVersionIsV10: false,
+                interactionIdMatches: false,
+                interactionTokenMatches: false,
+                httpStatus: null
+            };
         }
 
-        const response = await alkuperainenMakeRequest.call(this, url, init);
-        if (tiedot) {
-            tiedot.httpStatus = Number.isInteger(response?.status) ? response.status : null;
+        if (osat.length) {
+            const interactionsIndex = osat.lastIndexOf("interactions");
+            const hasInteractionRoute = interactionsIndex >= 0;
+            const routeId = hasInteractionRoute ? osat[interactionsIndex + 1] : undefined;
+            const routeToken = hasInteractionRoute ? osat[interactionsIndex + 2] : undefined;
+            const callbackRouteMatches = hasInteractionRoute &&
+                interactionsIndex + 3 === osat.length - 1 &&
+                Boolean(routeId) &&
+                Boolean(routeToken) &&
+                osat[interactionsIndex + 3] === "callback";
+
+            context.result = {
+                methodMatchesPost: init?.method === "POST",
+                callbackRouteMatches,
+                apiVersionIsV10: osat[0] === "api" && osat[1] === "v10",
+                interactionIdMatches: routeId === context.interactionId,
+                interactionTokenMatches: routeToken === context.interactionToken,
+                httpStatus: null
+            };
         }
-        return response;
+
+        const request = Reflect.apply(alkuperainenMakeRequest, this, arguments);
+        return Promise.resolve(request).then(
+            response => {
+                if (context.result) {
+                    context.result.httpStatus = Number.isInteger(response?.status) ? response.status : null;
+                }
+                return response;
+            },
+            error => {
+                if (context.result) context.result.httpStatus = null;
+                throw error;
+            }
+        );
     };
 
     rest.options.makeRequest = tarkkailevaMakeRequest;
 
     return {
+        context,
         kirjaa(virhe) {
-            if (pyynnot.length > 1) return;
-
-            const pyynto = pyynnot[0] ?? {};
+            const pyynto = context.result ?? {};
             console.info("[soita-rest-diagnostic] " + JSON.stringify({
                 methodMatchesPost: pyynto.methodMatchesPost === true,
                 callbackRouteMatches: pyynto.callbackRouteMatches === true,
@@ -85,11 +112,7 @@ function aloitaRestDiagnostiikka(interaction) {
                 interactionIdMatches: pyynto.interactionIdMatches === true,
                 interactionTokenMatches: pyynto.interactionTokenMatches === true,
                 pid: process.pid,
-                httpStatus: Number.isInteger(virhe?.status)
-                    ? virhe.status
-                    : Number.isInteger(pyynto.httpStatus)
-                        ? pyynto.httpStatus
-                        : null,
+                httpStatus: Number.isInteger(pyynto.httpStatus) ? pyynto.httpStatus : null,
                 discordCode: Number.isInteger(virhe?.code) ? virhe.code : null
             }));
         },
@@ -209,7 +232,9 @@ async execute(interaction) {
     const restDiagnostiikka = aloitaRestDiagnostiikka(interaction);
     let kuittaus;
     try {
-        kuittaus = interaction.deferReply();
+        kuittaus = restDiagnostiikka
+            ? restDiagnostiikkaContext.run(restDiagnostiikka.context, () => interaction.deferReply())
+            : interaction.deferReply();
     } catch (err) {
         try {
             restDiagnostiikka?.kirjaa(err);
