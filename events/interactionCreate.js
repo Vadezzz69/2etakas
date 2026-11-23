@@ -52,6 +52,18 @@ module.exports = {
 
         if (!interaction.isChatInputCommand()) return;
 
+        if (onSoita) {
+            const clientApplicationId = client.application?.id;
+            console.info("[soita-identity] " + JSON.stringify({
+                clientApplicationReady: Boolean(clientApplicationId),
+                applicationIdMatches: Boolean(
+                    clientApplicationId &&
+                    interaction.applicationId &&
+                    clientApplicationId === interaction.applicationId
+                )
+            }));
+        }
+
         const command = client.commands.get(interaction.commandName);
 
         if (!command) {

@@ -130,6 +130,11 @@ async execute(interaction) {
     try {
         kuittaus = interaction.deferReply();
     } catch (err) {
+        console.warn("[deferReply-error] " + JSON.stringify({
+            stage: "call",
+            httpStatus: Number.isInteger(err?.status) ? err.status : null,
+            discordCode: Number.isInteger(err?.code) ? err.code : null
+        }));
         kirjaaInteractionAika(interaction, "deferReply-failure", {
             executeAlkoiMs,
             deferAlkoiMs,
@@ -150,6 +155,11 @@ async execute(interaction) {
             kuittausViiveMs: Date.now() - interaction.createdTimestamp
         });
     } catch (err) {
+        console.warn("[deferReply-error] " + JSON.stringify({
+            stage: "await",
+            httpStatus: Number.isInteger(err?.status) ? err.status : null,
+            discordCode: Number.isInteger(err?.code) ? err.code : null
+        }));
         kirjaaInteractionAika(interaction, "deferReply-failure", {
             deferKestoMs: Date.now() - deferAlkoiMs,
             discordCode: err?.code ?? null
