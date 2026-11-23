@@ -9,7 +9,7 @@ const { lisattyEmbed } = require("../../utils/musiikki/muotoilu");
 const VALINTA_AIKARAJA_MS = 60_000;
 const REST_DIAGNOSTIIKKA_ENV = "SOITA_REST_DIAGNOSTIIKKA";
 const restDiagnostiikkaContext = new AsyncLocalStorage();
-let restDiagnostiikkaKaytetty = false;
+const restDiagnostiikkaAsennetut = new WeakSet();
 
 function kirjaaInteractionAika(interaction, vaihe, tiedot = {}) {
     if (process.env[REST_DIAGNOSTIIKKA_ENV] === "1") return;
@@ -31,81 +31,81 @@ function kirjaaInteractionAika(interaction, vaihe, tiedot = {}) {
 }
 
 function aloitaRestDiagnostiikka(interaction) {
-    if (process.env[REST_DIAGNOSTIIKKA_ENV] !== "1" || restDiagnostiikkaKaytetty) return null;
+    if (process.env[REST_DIAGNOSTIIKKA_ENV] !== "1") return null;
 
     const rest = interaction.client.rest;
-    const alkuperainenMakeRequest = rest.options.makeRequest;
-    if (typeof alkuperainenMakeRequest !== "function") return null;
+    if (!restDiagnostiikkaAsennetut.has(rest)) {
+        const alkuperainenMakeRequest = rest.options.makeRequest;
+        if (typeof alkuperainenMakeRequest !== "function") return null;
 
-    restDiagnostiikkaKaytetty = true;
+        const tarkkailevaMakeRequest = function (url, init) {
+            const context = restDiagnostiikkaContext.getStore();
+            if (!context) return Reflect.apply(alkuperainenMakeRequest, this, arguments);
+
+            let osat = [];
+            try {
+                osat = new URL(url).pathname.split("/").filter(Boolean);
+            } catch {
+                context.result = {
+                    methodMatchesPost: init?.method === "POST",
+                    callbackRouteMatches: false,
+                    apiVersionIsV10: false,
+                    interactionIdMatches: false,
+                    interactionTokenMatches: false,
+                    httpStatus: null
+                };
+            }
+
+            if (osat.length) {
+                const interactionsIndex = osat.lastIndexOf("interactions");
+                const hasInteractionRoute = interactionsIndex >= 0;
+                const routeId = hasInteractionRoute ? osat[interactionsIndex + 1] : undefined;
+                const routeToken = hasInteractionRoute ? osat[interactionsIndex + 2] : undefined;
+                const callbackRouteMatches = hasInteractionRoute &&
+                    interactionsIndex + 3 === osat.length - 1 &&
+                    Boolean(routeId) &&
+                    Boolean(routeToken) &&
+                    osat[interactionsIndex + 3] === "callback";
+
+                context.result = {
+                    methodMatchesPost: init?.method === "POST",
+                    callbackRouteMatches,
+                    apiVersionIsV10: osat[0] === "api" && osat[1] === "v10",
+                    interactionIdMatches: routeId === context.interactionId,
+                    interactionTokenMatches: routeToken === context.interactionToken,
+                    httpStatus: null
+                };
+            }
+
+            const request = Reflect.apply(alkuperainenMakeRequest, this, arguments);
+            return Promise.resolve(request).then(
+                response => {
+                    if (context.result) context.result.httpStatus = Number.isInteger(response?.status) ? response.status : null;
+                    return response;
+                },
+                error => {
+                    if (context.result) context.result.httpStatus = null;
+                    throw error;
+                }
+            );
+        };
+
+        rest.options.makeRequest = tarkkailevaMakeRequest;
+        restDiagnostiikkaAsennetut.add(rest);
+    }
+
     const context = {
         interactionId: interaction.id,
         interactionToken: interaction.token,
         result: null
     };
 
-    const tarkkailevaMakeRequest = function (url, init) {
-        if (restDiagnostiikkaContext.getStore() !== context) {
-            return Reflect.apply(alkuperainenMakeRequest, this, arguments);
-        }
-
-        let osat = [];
-        try {
-            osat = new URL(url).pathname.split("/").filter(Boolean);
-        } catch {
-            context.result = {
-                methodMatchesPost: init?.method === "POST",
-                callbackRouteMatches: false,
-                apiVersionIsV10: false,
-                interactionIdMatches: false,
-                interactionTokenMatches: false,
-                httpStatus: null
-            };
-        }
-
-        if (osat.length) {
-            const interactionsIndex = osat.lastIndexOf("interactions");
-            const hasInteractionRoute = interactionsIndex >= 0;
-            const routeId = hasInteractionRoute ? osat[interactionsIndex + 1] : undefined;
-            const routeToken = hasInteractionRoute ? osat[interactionsIndex + 2] : undefined;
-            const callbackRouteMatches = hasInteractionRoute &&
-                interactionsIndex + 3 === osat.length - 1 &&
-                Boolean(routeId) &&
-                Boolean(routeToken) &&
-                osat[interactionsIndex + 3] === "callback";
-
-            context.result = {
-                methodMatchesPost: init?.method === "POST",
-                callbackRouteMatches,
-                apiVersionIsV10: osat[0] === "api" && osat[1] === "v10",
-                interactionIdMatches: routeId === context.interactionId,
-                interactionTokenMatches: routeToken === context.interactionToken,
-                httpStatus: null
-            };
-        }
-
-        const request = Reflect.apply(alkuperainenMakeRequest, this, arguments);
-        return Promise.resolve(request).then(
-            response => {
-                if (context.result) {
-                    context.result.httpStatus = Number.isInteger(response?.status) ? response.status : null;
-                }
-                return response;
-            },
-            error => {
-                if (context.result) context.result.httpStatus = null;
-                throw error;
-            }
-        );
-    };
-
-    rest.options.makeRequest = tarkkailevaMakeRequest;
-
     return {
         context,
         kirjaa(virhe) {
             const pyynto = context.result ?? {};
             console.info("[soita-rest-diagnostic] " + JSON.stringify({
+                interactionId: context.interactionId,
                 methodMatchesPost: pyynto.methodMatchesPost === true,
                 callbackRouteMatches: pyynto.callbackRouteMatches === true,
                 apiVersionIsV10: pyynto.apiVersionIsV10 === true,
@@ -116,14 +116,7 @@ function aloitaRestDiagnostiikka(interaction) {
                 discordCode: Number.isInteger(virhe?.code) ? virhe.code : null
             }));
         },
-        palauta() {
-            if (rest.options.makeRequest === tarkkailevaMakeRequest) {
-                rest.options.makeRequest = alkuperainenMakeRequest;
-            }
-            if (process.env[REST_DIAGNOSTIIKKA_ENV] === "1") {
-                process.env[REST_DIAGNOSTIIKKA_ENV] = "used";
-            }
-        }
+        palauta() {}
     };
 }
 
