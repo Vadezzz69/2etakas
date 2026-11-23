@@ -116,12 +116,14 @@ function ytdlpDiagnostiikka(err) {
         "metadata-json-parse"
     ]);
     const vaihe = sallitutVaiheet.has(err?.vaihe) ? err.vaihe : "metadata-unknown";
+    const stderr = err?.stderr ?? err?.yksityiskohta ?? "";
 
     return {
         virheenVaihe: vaihe,
         virheluokka: virheenLuokka(err),
         exitCode: Number.isInteger(err?.exitCode) ? err.exitCode : null,
-        ...ytdlp.stderrDiagnostiikka(err?.stderr ?? err?.yksityiskohta)
+        ...ytdlp.stderrDiagnostiikka(stderr),
+        stderrOte: ytdlp.turvallinenDiagnostiikkaTeksti(stderr)
     };
 }
 
