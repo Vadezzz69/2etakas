@@ -271,7 +271,9 @@ async execute(interaction) {
         console.warn("[deferReply-error] " + JSON.stringify({
             stage: "await",
             httpStatus: Number.isInteger(err?.status) ? err.status : null,
-            discordCode: Number.isInteger(err?.code) ? err.code : null
+            discordCode: Number.isInteger(err?.code) ? err.code : null,
+            rawError: err?.rawError ?? null,
+            message: err?.message ?? null
         }));
         kirjaaInteractionAika(interaction, "deferReply-failure", {
             deferKestoMs: Date.now() - deferAlkoiMs,
