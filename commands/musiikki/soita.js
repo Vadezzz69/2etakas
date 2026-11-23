@@ -1,6 +1,6 @@
 const { ActionRowBuilder, ComponentType, SlashCommandBuilder, StringSelectMenuBuilder } = require("discord.js");
 const { AsyncLocalStorage } = require("node:async_hooks");
-const { randomUUID } = require("node:crypto");
+const { createHash, randomUUID } = require("node:crypto");
 const { haeKappaleet, MusiikkiVirhe } = require("../../utils/musiikki/lahteet");
 const { asetukset } = require("../../utils/musiikki/config");
 const { valmisteleSoitto, haeTaiLuoSoitin } = require("../../utils/musiikki/ohjain");
@@ -30,6 +30,78 @@ function kirjaaInteractionAika(interaction, vaihe, tiedot = {}) {
     setImmediate(() => console.info(`[interaction-timing] ${JSON.stringify(rivi)}`));
 }
 
+function tiivistaCallbackBody(body) {
+    let raw = null;
+    if (typeof body === "string") raw = body;
+    else if (Buffer.isBuffer(body) || body instanceof Uint8Array) raw = Buffer.from(body).toString("utf8");
+    else if (body && typeof body === "object") {
+        try { raw = JSON.stringify(body); } catch { raw = null; }
+    }
+
+    let parsed = body;
+    if (typeof raw === "string") {
+        try { parsed = JSON.parse(raw); } catch { parsed = null; }
+    }
+
+    const rootKeys = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? Object.keys(parsed).sort()
+        : [];
+    const data = parsed?.data;
+    const dataKeys = data && typeof data === "object" && !Array.isArray(data)
+        ? Object.keys(data).sort()
+        : [];
+    const isSafeDeferPayload = parsed?.type === 5 &&
+        rootKeys.length === 2 && rootKeys.includes("type") && rootKeys.includes("data") &&
+        dataKeys.length === 1 && dataKeys[0] === "flags" &&
+        Number.isInteger(data.flags);
+
+    return {
+        byteLength: raw === null ? null : Buffer.byteLength(raw),
+        sha256: raw === null ? null : createHash("sha256").update(raw).digest("hex"),
+        json: isSafeDeferPayload ? raw : null,
+        type: Number.isInteger(parsed?.type) ? parsed.type : null,
+        rootKeys,
+        dataKeys,
+        flags: Number.isInteger(data?.flags) ? data.flags : null
+    };
+}
+
+function callbackUrlForLog(url, pathParts, interactionsIndex) {
+    const parsed = new URL(url);
+    const safePath = pathParts.slice();
+    safePath[interactionsIndex + 2] = "[REDACTED]";
+    const query = parsed.searchParams.has("with_response")
+        ? `?with_response=${encodeURIComponent(parsed.searchParams.get("with_response"))}`
+        : "";
+    return `${parsed.origin}/${safePath.join("/")}${query}`;
+}
+
+function headerValue(headers, name) {
+    if (typeof headers?.get === "function") return headers.get(name);
+    const key = Object.keys(headers ?? {}).find(item => item.toLowerCase() === name.toLowerCase());
+    return key ? headers[key] : null;
+}
+
+function discordResponseForLog(error) {
+    const raw = error?.rawError;
+    if (!raw || typeof raw !== "object") return null;
+    const message = typeof raw.message === "string"
+        ? raw.message
+            .replace(/https?:\/\/[^\s"'<>]+/gi, "[URL]")
+            .replace(/[A-Za-z0-9._-]{40,}/g, "[REDACTED]")
+            .slice(0, 160)
+        : null;
+    return {
+        keys: Object.keys(raw).sort(),
+        code: Number.isInteger(raw.code) ? raw.code : null,
+        message
+    };
+}
+
+function jononKokonaispituus(soitin) {
+    return soitin ? soitin.jono.length + (soitin.nyt ? 1 : 0) : null;
+}
+
 function aloitaRestDiagnostiikka(interaction) {
     if (process.env[REST_DIAGNOSTIIKKA_ENV] !== "1") return null;
 
@@ -42,6 +114,7 @@ function aloitaRestDiagnostiikka(interaction) {
             const context = restDiagnostiikkaContext.getStore();
             if (!context) return Reflect.apply(alkuperainenMakeRequest, this, arguments);
 
+            const instrumentationStartedAt = Date.now();
             let osat;
             try {
                 osat = new URL(url).pathname.split("/").filter(Boolean);
@@ -65,7 +138,10 @@ function aloitaRestDiagnostiikka(interaction) {
                 apiVersionIsV10: osat[0] === "api" && osat[1] === "v10",
                 interactionIdMatches: routeId === context.interactionId,
                 interactionTokenMatches: routeToken === context.interactionToken,
-                httpStatus: null
+                httpStatus: null,
+                requestStartedAt: null,
+                diagnosticPreparationMs: null,
+                requestCompletedAt: null
             };
             const callbackMatchesInteraction = result.methodMatchesPost &&
                 result.callbackRouteMatches &&
@@ -75,6 +151,14 @@ function aloitaRestDiagnostiikka(interaction) {
 
             if (callbackRouteMatches) {
                 context.callbackRequestCount++;
+                try {
+                    result.callbackUrl = callbackUrlForLog(url, osat, interactionsIndex);
+                    result.contentType = headerValue(init?.headers, "content-type");
+                    result.httpBody = tiivistaCallbackBody(init?.body);
+                } catch {
+                    result.requestMetadataUnavailable = true;
+                }
+                context.lastCallbackRequest = result;
                 if (callbackMatchesInteraction) {
                     context.matchingCallbackRequestCount++;
                     context.result = result;
@@ -85,15 +169,20 @@ function aloitaRestDiagnostiikka(interaction) {
                 context.otherRestRequestCount++;
             }
 
+            const requestStartedAt = Date.now();
+            result.requestStartedAt = requestStartedAt;
+            result.diagnosticPreparationMs = requestStartedAt - instrumentationStartedAt;
             const request = Reflect.apply(alkuperainenMakeRequest, this, arguments);
             if (!callbackMatchesInteraction) return request;
 
             return Promise.resolve(request).then(
                 response => {
                     context.requestCompletedAt = Date.now();
+                    result.requestCompletedAt = context.requestCompletedAt;
                     result.httpStatus = Number.isInteger(response?.status) ? response.status : null;
                     try {
                         result.discordDate = response?.headers?.get?.("date") ?? null;
+                        result.discordDateHeaderResolutionMs = result.discordDate ? 1000 : null;
                         const discordDateMs = result.discordDate ? Date.parse(result.discordDate) : NaN;
                         result.localMinusDiscordMs = Number.isFinite(discordDateMs)
                             ? Date.now() - discordDateMs
@@ -106,6 +195,7 @@ function aloitaRestDiagnostiikka(interaction) {
                 },
                 error => {
                     context.requestCompletedAt = Date.now();
+                    result.requestCompletedAt = context.requestCompletedAt;
                     result.httpStatus = null;
                     throw error;
                 }
@@ -129,17 +219,31 @@ function aloitaRestDiagnostiikka(interaction) {
         matchingCallbackRequestCount: 0,
         mismatchedCallbackRequestCount: 0,
         otherRestRequestCount: 0,
-        result: null
+        result: null,
+        lastCallbackRequest: null
     };
 
     return {
         context,
         kirjaa(virhe) {
-            const pyynto = context.result ?? {};
+            const pyynto = context.result ?? context.lastCallbackRequest ?? {};
             console.info("[soita-rest-diagnostic] " + JSON.stringify({
                 interactionId: context.interactionId,
-                ageAtRequestMs: Number.isFinite(context.createdTimestamp) ? context.requestStartedAt - context.createdTimestamp : null,
-                requestDurationMs: Number.isFinite(context.requestCompletedAt) ? context.requestCompletedAt - context.requestStartedAt : null,
+                ageAtRequestMs: Number.isFinite(context.createdTimestamp) && Number.isFinite(pyynto.requestStartedAt)
+                    ? pyynto.requestStartedAt - context.createdTimestamp
+                    : null,
+                ageAtDeferCallMs: Number.isFinite(context.createdTimestamp)
+                    ? context.requestStartedAt - context.createdTimestamp
+                    : null,
+                deferToHttpRequestMs: Number.isFinite(pyynto.requestStartedAt)
+                    ? pyynto.requestStartedAt - context.requestStartedAt
+                    : null,
+                diagnosticPreparationMs: Number.isFinite(pyynto.diagnosticPreparationMs)
+                    ? pyynto.diagnosticPreparationMs
+                    : null,
+                requestDurationMs: Number.isFinite(pyynto.requestCompletedAt) && Number.isFinite(pyynto.requestStartedAt)
+                    ? pyynto.requestCompletedAt - pyynto.requestStartedAt
+                    : null,
                 initiallyDeferred: context.initiallyDeferred,
                 initiallyReplied: context.initiallyReplied,
                 applicationIdMatches: Boolean(context.clientApplicationId && context.applicationId && context.clientApplicationId === context.applicationId),
@@ -155,7 +259,12 @@ function aloitaRestDiagnostiikka(interaction) {
                 pid: process.pid,
                 httpStatus: Number.isInteger(pyynto.httpStatus) ? pyynto.httpStatus : null,
                 discordCode: Number.isInteger(virhe?.code) ? virhe.code : null,
+                discordResponse: discordResponseForLog(virhe),
+                callbackUrl: pyynto.callbackUrl ?? null,
+                callbackContentType: pyynto.contentType ?? null,
+                callbackHttpBody: pyynto.httpBody ?? null,
                 discordDate: pyynto.discordDate ?? null,
+                discordDateHeaderResolutionMs: pyynto.discordDateHeaderResolutionMs ?? null,
                 localMinusDiscordMs: Number.isFinite(pyynto.localMinusDiscordMs) ? pyynto.localMinusDiscordMs : null
             }));
         },
@@ -336,6 +445,13 @@ async execute(interaction) {
     if (!valmis) return;
 
     const { kanava } = valmis;
+    let vaihe = "haku";
+    let kappaleLoytyi = false;
+    let jonoonLisaysKutsuttu = false;
+    let jonoonLisaysOnnistui = false;
+    let jonoEnnen = jononKokonaispituus(valmis.soitin);
+    let soitin = null;
+    let hakuId = null;
 
         try {
             const haku = await haeKappaleet(interaction.options.getString("haku"), {
@@ -343,6 +459,15 @@ async execute(interaction) {
                 hakulahde: interaction.options.getString("lahde") ?? undefined,
                 asetukset: asetukset()
             });
+            hakuId = haku.hakuId ?? null;
+            kappaleLoytyi = haku.kappaleet.length > 0;
+            console.info("[musiikki-jono] " + JSON.stringify({
+                vaihe: "haku-valmis",
+                hakuId,
+                loytyi: kappaleLoytyi,
+                tuloksia: haku.kappaleet.length,
+                jonoonLisaysKutsuttu: false
+            }));
 
             if (!haku.kappaleet.length) {
                 const syy = haku.hylatty
@@ -351,8 +476,17 @@ async execute(interaction) {
                 return interaction.editReply(syy);
             }
 
+            vaihe = "valinta";
             const valittu = haku.valittavat ? await valitseHakutulos(interaction, haku) : null;
-            if (haku.valittavat && !valittu) return;
+            if (haku.valittavat && !valittu) {
+                console.info("[musiikki-jono] " + JSON.stringify({
+                    vaihe: "valinta-peruttu",
+                    hakuId,
+                    loytyi: kappaleLoytyi,
+                    jonoonLisaysKutsuttu: false
+                }));
+                return;
+            }
             const valittuIndeksi = haku.valittavat
                 ? haku.kappaleet.findIndex(kappale => kappale.url === valittu.url)
                 : -1;
@@ -369,7 +503,8 @@ async execute(interaction) {
                 : haku.kappaleet;
 
             // Soitin haetaan vasta nyt: haun aikana toinen käyttäjä on voinut luoda sen.
-            const soitin = haeTaiLuoSoitin(interaction.guildId);
+            vaihe = "soitin";
+            soitin = haeTaiLuoSoitin(interaction.guildId);
             soitin.tekstikanava = interaction.channel;
 
             try {
@@ -379,18 +514,56 @@ async execute(interaction) {
                 throw err;
             }
 
+            vaihe = "jonoon-lisays";
+            jonoEnnen = jononKokonaispituus(soitin);
+            jonoonLisaysKutsuttu = true;
+            console.info("[musiikki-jono] " + JSON.stringify({
+                vaihe: "lisays-alkoi",
+                hakuId,
+                loytyi: kappaleLoytyi,
+                kappaleita: kappaleet.length,
+                jonoonLisaysKutsuttu,
+                jononPituusEnnen: jonoEnnen
+            }));
             const tulos = soitin.lisaa(kappaleet);
+            jonoonLisaysOnnistui = true;
+            const jonoJalkeen = jononKokonaispituus(soitin);
+            console.info("[musiikki-jono] " + JSON.stringify({
+                vaihe: "lisays-valmis",
+                hakuId,
+                loytyi: kappaleLoytyi,
+                lisatty: tulos.lisatyt.length,
+                pudotettu: tulos.pudotettu,
+                jonoonLisaysKutsuttu,
+                onnistui: true,
+                jononPituusEnnen: jonoEnnen,
+                jononPituusJalkeen: jonoJalkeen
+            }));
 
+            vaihe = "vastaus";
             await interaction.editReply({
                 embeds: [lisattyEmbed({
                     ...tulos,
                     hylatty: haku.hylatty,
                     lahde: haku.lahde,
-                    jonoPituus: soitin.jono.length + (soitin.nyt ? 1 : 0)
+                    jonoPituus: jonoJalkeen
                 })]
             });
 
         } catch (err) {
+            console.warn("[musiikki-jono] " + JSON.stringify({
+                vaihe: jonoonLisaysOnnistui ? "jonon-lisays-valmis-vastaus-epaonnistui" : "lisays-epaonnistui",
+                vaiheKohta: vaihe,
+                hakuId,
+                loytyi: kappaleLoytyi,
+                jonoonLisaysKutsuttu,
+                jonoonLisaysOnnistui,
+                onnistui: jonoonLisaysOnnistui,
+                jononPituusEnnen: jonoEnnen,
+                jononPituusJalkeen: jononKokonaispituus(soitin ?? valmis.soitin),
+                virheNimi: typeof err?.name === "string" ? err.name : null,
+                virheKoodi: typeof err?.code === "string" || Number.isInteger(err?.code) ? err.code : null
+            }));
             if (err instanceof MusiikkiVirhe) {
                 return interaction.editReply(`⚠️ ${err.message}`);
             }

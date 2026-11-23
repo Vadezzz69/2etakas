@@ -174,6 +174,8 @@ class Soitin {
 
     /** Liittyy kanavalle. Samanaikaiset kutsut jakavat saman yhdistämisen. */
     yhdista(kanava) {
+        clearTimeout(this.ajastinTyhja);
+        if (this.lopetettu) throw new MusiikkiVirhe("Soitin on jo suljettu. Yritä lisätä kappale uudelleen.");
         if (this.yhteys && this.kanavaId === kanava.id) return Promise.resolve();
 
         if (!this.yhdistaa || this.yhdistaaKanavalle !== kanava.id) {
@@ -200,6 +202,11 @@ class Soitin {
         } catch {
             yhteys.destroy();
             throw new MusiikkiVirhe("Äänikanavalle liittyminen ei onnistunut. Tarkista botin oikeudet (Yhdistä ja Puhu).");
+        }
+
+        if (this.lopetettu) {
+            yhteys.destroy();
+            throw new MusiikkiVirhe("Soitin suljettiin ennen äänikanavalle liittymistä. Yritä lisätä kappale uudelleen.");
         }
 
         // Jos yhteys katkeaa (esim. botti siirretään toiselle kanavalle), annetaan
@@ -230,6 +237,10 @@ class Soitin {
      * @returns {{ lisatyt: object[], pudotettu: number, soiHeti: boolean }}
      */
     lisaa(kappaleet) {
+        if (this.lopetettu) {
+            throw new MusiikkiVirhe("Soitin on jo suljettu. Yritä lisätä kappale uudelleen.");
+        }
+
         const tilaa = this.asetukset.maxJono - this.jono.length;
 
         if (tilaa <= 0) {
@@ -576,6 +587,8 @@ class Soitin {
     }
 
     async #seuraava({ ohitus = false } = {}) {
+        if (this.lopetettu) return;
+
         clearTimeout(this.ajastinTyhja);
         const sarja = ++this.sarja;
 

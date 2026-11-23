@@ -3,10 +3,17 @@
  * Musiikkimoduulin ympäristötarkistus: `npm run musiikki:tarkista`
  *
  * Kertoo mitä musiikki tarvitsee ja mikä niistä puuttuu tältä palvelimelta.
- * `npm run musiikki:tarkista -- --paivita` päivittää lisäksi yt-dlp:n
- * (YouTube muuttuu usein; vanha yt-dlp lakkaa toimimasta).
+ * `npm run musiikki:tarkista -- --paivita` päivittää projektin bin/yt-dlp:n
+ * virallisella SHA256-summalla varmennetulla julkaisulla.
  */
-require("dotenv").config();
+try {
+    require("dotenv").config({ quiet: true });
+} catch (err) {
+    const dotenvPuuttuu = err?.code === "MODULE_NOT_FOUND" &&
+        /Cannot find module ['"]dotenv['"]/.test(err.message ?? "");
+    if (!dotenvPuuttuu) throw err;
+    console.warn("⚠️ dotenv puuttuu; .env-tiedostoa ei ladata. Käytetään palvelimen ympäristömuuttujia.");
+}
 
 const { execFile } = require("child_process");
 const ytdlp = require("../utils/musiikki/ytdlp");
@@ -49,17 +56,31 @@ function suorita(komento, args) {
     rivi(ffmpegStatic || ffmpegJarjestelmassa ? OK : PUUTTUU,
         ffmpegStatic ? "ffmpeg-static asennettu" : ffmpegJarjestelmassa ? `ffmpeg löytyy järjestelmästä (${ffmpeg.ulos.split("\n")[0].slice(0, 40)})` : "ffmpeg puuttuu (asenna ffmpeg-static tai ffmpeg järjestelmään)");
 
+    try {
+        const temp = ytdlp.tarkistaTempHakemisto();
+        const vapaaTila = Number.isFinite(temp.vapaataTavua)
+            ? `, vapaata ${Math.floor(temp.vapaataTavua / (1024 * 1024))} MiB`
+            : "";
+        const vapaatInodet = Number.isFinite(temp.vapaitaInodeja)
+            ? `, vapaita inodeja ${temp.vapaitaInodeja}`
+            : "";
+        rivi(temp.juuri === "project" ? OK : "⚠️", `yt-dlp TMPDIR kirjoitettavissa: ${temp.polku}${vapaaTila}${vapaatInodet}`);
+    } catch (err) {
+        rivi(PUUTTUU, `yt-dlp TMPDIR ei ole käytettävissä: ${err.message}`);
+    }
+
     const yt = await ytdlp.loyda();
     if (yt) {
-        rivi(OK, `yt-dlp ${yt.versio} (${yt.polku})`);
+        rivi(OK, `yt-dlp ${yt.versio} (${yt.polku})${yt.sha256Varmennettu ? " — SHA256 varmennettu" : " — SHA256-varmennus ei ollut käytettävissä"}`);
 
         if (process.argv.includes("--paivita")) {
-            const paivitys = await ytdlp.suoritaYtdlp(yt.polku, ["-U"], { aikarajaMs: 60_000 });
-            const ulos = `${paivitys.stdout}${paivitys.stderr}`.trim();
-            const viimeinenRivi = ulos.split("\n").pop();
-            console.log(paivitys.error || paivitys.timedOut || paivitys.exitCode !== 0
-                ? `${VAROITUS}Päivitys ei onnistunut: ${viimeinenRivi || "yt-dlp päättyi virheeseen"}`
-                : `🔄 ${viimeinenRivi}`);
+            try {
+                const paivitetty = await ytdlp.paivitaBinaari(yt.polku);
+                console.log(`🔄 yt-dlp ${paivitetty.versio} ladattu, SHA256 varmennettu ja vaihdettu atomisesti.`);
+            } catch (err) {
+                console.error(`${VAROITUS}Varmennettu päivitys ei onnistunut: ${err.message}`);
+                process.exitCode = 1;
+            }
         }
     } else {
         rivi(PUUTTUU, `yt-dlp puuttuu (aseta YTDLP_PATH, asenna PATH:iin tai aseta YTDLP_AUTOASENNUS=1). Alusta: ${ytdlp.julkaisunNimi() ?? "ei tuettu"}`);

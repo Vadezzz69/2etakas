@@ -9,8 +9,10 @@
  */
 
 const assert = require("node:assert/strict");
+const { createHash } = require("node:crypto");
 const { EventEmitter } = require("node:events");
 const fs = require("node:fs");
+const path = require("node:path");
 const { PassThrough } = require("node:stream");
 
 const { Soitin } = require("../utils/musiikki/soitin");
@@ -111,6 +113,8 @@ testi("rinnakkaiset yt-dlp-prosessit saavat erilliset temp-hakemistot ja ne siiv
         await Promise.all([eka.cleanup(), toka.cleanup()]);
 
         assert.notEqual(eka.tmpDir, toka.tmpDir);
+        assert.equal(path.dirname(eka.tmpDir), path.join(process.cwd(), "bin"));
+        assert.equal(path.dirname(toka.tmpDir), path.join(process.cwd(), "bin"));
         assert.deepEqual(ekaTuloste.split("\n"), [eka.tmpDir, eka.tmpDir, eka.tmpDir]);
         assert.deepEqual(tokaTuloste.split("\n"), [toka.tmpDir, toka.tmpDir, toka.tmpDir]);
         assert.equal(fs.existsSync(eka.tmpDir), false);
@@ -120,6 +124,53 @@ testi("rinnakkaiset yt-dlp-prosessit saavat erilliset temp-hakemistot ja ne siiv
         if (toka.proc.exitCode === null) toka.proc.kill("SIGKILL");
         await Promise.all([eka.cleanup(), toka.cleanup()]);
     }
+});
+
+testi("yt-dlp:n virallisen SHA256-listan jäsennys valitsee oikean tiedoston", () => {
+    const manifesti = [
+        `${"a".repeat(64)}  yt-dlp_linux`,
+        `${"b".repeat(64)}  yt-dlp_linux_aarch64`
+    ].join("\n");
+    assert.equal(ytdlp.sha256Manifestista(manifesti, "yt-dlp_linux"), "a".repeat(64));
+    assert.throws(() => ytdlp.sha256Manifestista(manifesti, "yt-dlp_macos"), /puuttuu/);
+});
+
+testi("yt-dlp:n tarkistusskripti löytää kirjoitettavan temp-hakemiston ja vapaan tilan", () => {
+    const tila = ytdlp.tarkistaTempHakemisto();
+    assert.equal(tila.kirjoitettavissa, true);
+    assert.ok(["project", "system"].includes(tila.juuri));
+    assert.equal(fs.existsSync(tila.polku), true);
+    assert.ok(tila.vapaataTavua === null || tila.vapaataTavua >= 0);
+    assert.ok(tila.vapaitaInodeja === null || tila.vapaitaInodeja >= 0);
+    if (process.platform === "win32") assert.equal(tila.vapaitaInodeja, null);
+});
+
+testi("yt-dlp:n tiedoston SHA256 vastaa tunnetun sisällön tarkistussummaa", async () => {
+    const tiedosto = path.join(process.cwd(), "bin", `.sha256-testi-${process.pid}`);
+    fs.writeFileSync(tiedosto, "abc");
+    try {
+        assert.equal(
+            await ytdlp.tiedostonSha256(tiedosto),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    } finally {
+        fs.rmSync(tiedosto, { force: true });
+    }
+});
+
+testi("yt-dlp:n metatietoprosessit ajetaan yksi kerrallaan ilman stream-rajoitusta", async () => {
+    let aktiivisia = 0;
+    let enintaan = 0;
+    await Promise.all(Array.from({ length: 5 }, (_, i) =>
+        ytdlp.suoritaMetatietoJonossa(async () => {
+            aktiivisia++;
+            enintaan = Math.max(enintaan, aktiivisia);
+            await aika(3 + (i % 2));
+            aktiivisia--;
+        })
+    ));
+    assert.equal(enintaan, 1);
+    assert.equal(aktiivisia, 0);
 });
 
 // ---------------------------------------------------------------------------
@@ -134,6 +185,30 @@ testi("soitto alkaa ensimmäisestä ja muut jäävät jonoon", async () => {
     assert.deepEqual(soitin.toistettu.map(x => x.otsikko), ["a"]);
     assert.equal(s.jono.length, 2);
     assert.equal(tapahtumat.filter(t => t.tyyppi === "soi").length, 1);
+});
+
+testi("tyhjän soittimen ajastin ei sulje soitinta kesken kanavalle liittymisen", async () => {
+    const { s } = luo();
+    s.voice.entersState = async () => { await aika(20); };
+    s.ajastinTyhja = setTimeout(() => s.lopeta(), 5);
+
+    await s.yhdista({
+        id: "vc1",
+        guild: { id: "g1", voiceAdapterCreator: () => {} }
+    });
+
+    assert.equal(s.lopetettu, false);
+    s.lisaa([k("a")]);
+    await aika(5);
+    assert.equal(s.nyt.otsikko, "a");
+    s.lopeta();
+});
+
+testi("suljettu soitin ei hyväksy kappaleita näkymättömään jonoon", () => {
+    const { s } = luo();
+    s.lopeta();
+    assert.throws(() => s.lisaa([k("a")]), /jo suljettu/);
+    assert.equal(s.jono.length, 0);
 });
 
 testi("kappaleen loppuessa siirrytään seuraavaan ja jonon lopussa ilmoitetaan", async () => {
@@ -1701,12 +1776,20 @@ komentoTesti("/soita REST-diagnostiikka laskee callbackin ja välittää pyynnö
     const interactionId = "diagnostic-interaction";
     const interactionToken = "diagnostic-token";
     const unrelatedInit = { method: "GET", headers: { "x-test": "unchanged" } };
-    const callbackInit = { method: "POST", body: { type: 5 } };
+    const callbackBody = JSON.stringify({ type: 5, data: { flags: 0 } });
+    const callbackInit = {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: callbackBody
+    };
     const rest = {
         options: {
             makeRequest(url, init) {
                 kutsut.push({ url, init, thisValue: this });
-                return Promise.resolve({ status: url.includes("/callback") ? 204 : 200 });
+                return Promise.resolve({
+                    status: url.includes("/callback") ? 204 : 200,
+                    headers: new Headers({ date: "Mon, 23 Nov 2026 10:44:46 GMT" })
+                });
             }
         }
     };
@@ -1749,6 +1832,101 @@ komentoTesti("/soita REST-diagnostiikka laskee callbackin ja välittää pyynnö
         assert.equal(diagnostic.mismatchedCallbackRequestCount, 0);
         assert.equal(diagnostic.otherRestRequestCount, 1);
         assert.equal(diagnostic.httpStatus, 204);
+        assert.equal(diagnostic.callbackUrl, "https://discord.com/api/v10/interactions/diagnostic-interaction/[REDACTED]/callback?with_response=false");
+        assert.equal(diagnostic.callbackContentType, "application/json");
+        assert.deepEqual(diagnostic.callbackHttpBody, {
+            byteLength: Buffer.byteLength(callbackBody),
+            sha256: createHash("sha256").update(callbackBody).digest("hex"),
+            json: callbackBody,
+            type: 5,
+            rootKeys: ["data", "type"],
+            dataKeys: ["flags"],
+            flags: 0
+        });
+        assert.ok(Number.isFinite(diagnostic.ageAtRequestMs));
+        assert.ok(Number.isFinite(diagnostic.deferToHttpRequestMs));
+        assert.ok(Number.isFinite(diagnostic.diagnosticPreparationMs));
+        assert.ok(Number.isFinite(diagnostic.requestDurationMs));
+        assert.equal(diagnostic.discordDateHeaderResolutionMs, 1000);
+        assert.equal(lokit.join("\n").includes(interactionToken), false);
+    } finally {
+        console.info = alkuperainenInfo;
+        if (vanhaDiagnostiikka === undefined) delete process.env.SOITA_REST_DIAGNOSTIIKKA;
+        else process.env.SOITA_REST_DIAGNOSTIIKKA = vanhaDiagnostiikka;
+        if (vanhaBypass === undefined) delete process.env.SOITA_REST_DIAGNOSTIIKKA_BYPASS;
+        else process.env.SOITA_REST_DIAGNOSTIIKKA_BYPASS = vanhaBypass;
+        y.siivoa();
+    }
+});
+
+komentoTesti("/soita REST-diagnostiikka tallentaa rajatun 10062-vastauksen", async () => {
+    const y = komentoYmparisto();
+    const vanhaDiagnostiikka = process.env.SOITA_REST_DIAGNOSTIIKKA;
+    const vanhaBypass = process.env.SOITA_REST_DIAGNOSTIIKKA_BYPASS;
+    const alkuperainenInfo = console.info;
+    const lokit = [];
+    const interactionId = "failed-diagnostic-interaction";
+    const interactionToken = "failed-diagnostic-token";
+    const callbackBody = JSON.stringify({ type: 5, data: { flags: 0 } });
+    const rest = {
+        options: {
+            makeRequest(url, init) {
+                assert.equal(url, `https://discord.com/api/v10/interactions/${interactionId}/${interactionToken}/callback?with_response=false`);
+                assert.equal(init.body, callbackBody);
+                return Promise.resolve({
+                    status: 404,
+                    headers: new Headers({ date: "Mon, 23 Nov 2026 10:44:46 GMT" })
+                });
+            }
+        }
+    };
+
+    process.env.SOITA_REST_DIAGNOSTIIKKA = "1";
+    delete process.env.SOITA_REST_DIAGNOSTIIKKA_BYPASS;
+    console.info = (...args) => lokit.push(args.map(String).join(" "));
+
+    try {
+        const i = y.interaktio();
+        i.id = interactionId;
+        i.token = interactionToken;
+        i.applicationId = "application-id";
+        i.createdTimestamp = Date.now();
+        i.client = { rest, application: { id: "application-id" } };
+        i.deferReply = async () => {
+            i.deferCalls++;
+            await rest.options.makeRequest(
+                `https://discord.com/api/v10/interactions/${interactionId}/${interactionToken}/callback?with_response=false`,
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: callbackBody
+                }
+            );
+            throw Object.assign(new Error("Unknown interaction"), {
+                code: 10062,
+                status: 404,
+                rawError: { code: 10062, message: "Unknown interaction" }
+            });
+        };
+
+        await assert.rejects(
+            () => y.komento("soita").execute(i),
+            error => error.code === 10062
+        );
+
+        const diagnosticLog = lokit.find(line => line.startsWith("[soita-rest-diagnostic] "));
+        assert.ok(diagnosticLog);
+        const diagnostic = JSON.parse(diagnosticLog.slice("[soita-rest-diagnostic] ".length));
+        assert.equal(diagnostic.httpStatus, 404);
+        assert.equal(diagnostic.discordCode, 10062);
+        assert.deepEqual(diagnostic.discordResponse, {
+            keys: ["code", "message"],
+            code: 10062,
+            message: "Unknown interaction"
+        });
+        assert.equal(diagnostic.interactionTokenMatches, true);
+        assert.equal(diagnostic.callbackUrl, "https://discord.com/api/v10/interactions/failed-diagnostic-interaction/[REDACTED]/callback?with_response=false");
+        assert.equal(diagnostic.callbackHttpBody.json, callbackBody);
         assert.equal(lokit.join("\n").includes(interactionToken), false);
     } finally {
         console.info = alkuperainenInfo;
@@ -1863,6 +2041,56 @@ komentoTesti("/soita hakee kappaleen, liittyy kanavalle, aloittaa soiton ja ilmo
     } finally { y.siivoa(); }
 });
 
+komentoTesti("/soita metatietohaun virhe ei lisää kappaletta eikä lukitse seuraavaa lisäystä", async () => {
+    const y = komentoYmparisto();
+    const alkuperainenTiedot = ytdlp.tiedot;
+    const alkuperainenInfo = console.info;
+    const alkuperainenWarn = console.warn;
+    const lokit = [];
+    try {
+        await y.komento("soita").execute(y.interaktio({ valinnat: { haku: "ensimmäinen" } }));
+        const soitin = y.soitinModuuli.haeSoitin("g1");
+        assert.ok(soitin);
+        assert.equal(soitin.jono.length, 0);
+
+        ytdlp.tiedot = async () => {
+            throw ytdlp.luoYtdlpVirhe({
+                vaihe: "metadata-process-exit",
+                exitCode: 1,
+                stderr: "[PYI-170:ERROR] Failed to extract cryptography/hazmat/bindings/_rust.abi3.so"
+            });
+        };
+        console.info = (...args) => lokit.push(args.join(" "));
+        console.warn = (...args) => lokit.push(args.join(" "));
+
+        const epaonnistunut = y.interaktio({ valinnat: { haku: "ensimmäinen" } });
+        await y.komento("soita").execute(epaonnistunut);
+        assert.equal(y.soitinModuuli.haeSoitin("g1"), soitin, "hakupalvelun virhe ei saa korvata olemassa olevaa soitinta");
+        assert.equal(soitin.nyt.otsikko, "Haku: ytsearch5:ensimmäinen");
+        assert.equal(soitin.jono.length, 0, "hakupalvelun virhe ei muuta jonon sisältöä");
+        assert.ok(epaonnistunut.vastaukset.some(v => v.tyyppi === "editReply"));
+        assert.ok(lokit.some(rivi =>
+            rivi.includes('"vaiheKohta":"haku"') &&
+            rivi.includes('"jonoonLisaysKutsuttu":false') &&
+            rivi.includes('"jononPituusEnnen":1') &&
+            rivi.includes('"jononPituusJalkeen":1')
+        ));
+
+        ytdlp.tiedot = alkuperainenTiedot;
+        const onnistunut = y.interaktio({ valinnat: { haku: "seuraava" } });
+        await y.komento("soita").execute(onnistunut);
+        assert.equal(y.soitinModuuli.haeSoitin("g1"), soitin);
+        assert.equal(soitin.jono.length, 1, "seuraava haku lisää kappaleen jo soivan perään");
+        assert.equal(soitin.jono[0].otsikko, "Haku: ytsearch5:seuraava");
+        assert.ok(lokit.some(rivi => rivi.includes('"vaihe":"lisays-valmis"') && rivi.includes('"onnistui":true')));
+    } finally {
+        ytdlp.tiedot = alkuperainenTiedot;
+        console.info = alkuperainenInfo;
+        console.warn = alkuperainenWarn;
+        y.siivoa();
+    }
+});
+
 komentoTesti("/soita näyttää hakutulokset ja soittaa käyttäjän valitseman version", async () => {
     const y = komentoYmparisto();
     try {
@@ -1923,6 +2151,11 @@ komentoTesti("/soita käyttää valitun SoundCloud-osuman jälkeen saman haun se
         assert.equal(soitin.nyt.url, yritykset[1]);
         assert.equal(soitin.jono.length, 0, "vaihtoehto ei lisäänny jonoon uutena kappaleena");
         assert.equal(i.deferCalls, 1);
+
+        ytdlp.tiedot = alkuperainenTiedot;
+        await y.komento("soita").execute(y.interaktio({ valinnat: { haku: "seuraava kappale" } }));
+        assert.equal(soitin.jono.length, 1, "uusi kappale lisätään DRM-varatoiston jälkeen");
+        assert.match(soitin.jono[0].otsikko, /seuraava kappale/);
     } finally {
         ytdlp.tiedot = alkuperainenTiedot;
         ytdlp.virta = alkuperainenVirta;

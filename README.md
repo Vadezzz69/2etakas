@@ -70,7 +70,8 @@ käyttäjiä ohjaamasta palvelinta hakemaan mielivaltaisia osoitteita. Suorat l�
    `npm install @discordjs/voice @snazzah/davey opusscript ffmpeg-static`
    (`@snazzah/davey` on pakollinen: Discordin äänikanavat ovat päästä päähän salattuja.)
 3. **yt-dlp**-ohjelma palvelimelle. Jos et voi asentaa ohjelmia, aseta `YTDLP_AUTOASENNUS=1`, jolloin
-   virallinen binääri ladataan kansioon `bin/` ensimmäisellä käytöllä. Muuten `YTDLP_PATH`.
+   virallinen binääri ladataan SHA256-tarkistussumman kanssa varmennettuna kansioon `bin/` ensimmäisellä
+   käytöllä. Muuten `YTDLP_PATH`.
 4. `ffmpeg`: `ffmpeg-static` riittää, tai järjestelmän oma `ffmpeg`.
 5. Tarkista: `npm run musiikki:tarkista`. Se listaa mitä puuttuu.
 6. Botilla pitää olla äänikanavalla oikeudet *Yhdistä* ja *Puhu*. Hostin on sallittava lähtevä UDP-liikenne
@@ -78,8 +79,13 @@ käyttäjiä ohjaamasta palvelinta hakemaan mielivaltaisia osoitteita. Suorat l�
 
 **Ylläpito ja rajoitukset**
 
-- **Päivitä yt-dlp säännöllisesti** (`npm run musiikki:tarkista -- --paivita`). YouTube muuttuu usein, ja
-  vanha versio lakkaa toimimasta.
+- **Päivitä yt-dlp säännöllisesti** (`npm run musiikki:tarkista -- --paivita`). Päivitys varmennetaan
+  virallista SHA256-tarkistussummaa vasten ja vaihdetaan atomisesti projektin `bin/yt-dlp`-tiedostoon.
+  `YTDLP_PATH`-asennukset päivitetään niiden omalla hallintatavalla.
+- yt-dlp:n jokaisella prosessilla on oma `bin/`-hakemiston väliaikaishakemisto; jos projektihakemistoa
+  ei voi kirjoittaa, käytetään järjestelmän temp-hakemistoa. Metatietohaun yt-dlp-prosessit ajetaan
+  jonossa, mutta äänivirran käynnistystä ei rajoiteta. Ympäristötarkistus näyttää temp-hakemiston
+  kirjoitettavuuden sekä saatavilla olevan levytilan ja tuettujen tiedostojärjestelmien inode-määrän.
 - YouTube voi estää haut palvelinten IP-osoitteilta ("kirjaudu sisään"). Silloin auttaa
   asianmukaisesti hallittu evästetiedosto (`YTDLP_COOKIES`); haku ja äänen lataus kokeilevat
   automaattisesti myös SoundCloudia. Jos suoran YouTube-linkin metatiedot estyvät, automaattinen

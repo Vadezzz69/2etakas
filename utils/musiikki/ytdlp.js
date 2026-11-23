@@ -3,16 +3,118 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { spawn } = require("child_process");
-const { Transform } = require("stream");
+const { createHash } = require("crypto");
+const { Readable, Transform } = require("stream");
+const { pipeline } = require("stream/promises");
 
 const BIN_KANSIO = path.join(process.cwd(), "bin");
-const JULKAISU_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/";
+const JULKAISU_URL = "https://github.com/yt-dlp/yt-dlp/releases/download";
+const JULKAISU_API_URL = "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest";
 const JSON_MAX_TAVUA = 20 * 1024 * 1024;
 const STDERR_MAX_MERKKIA = 500;
 const VIRTA_ALKU_AIKARAJA_MS = 30_000;
+const BINARI_MAX_TAVUA = 100 * 1024 * 1024;
+const METATIETO_MAX_RINNAKKAIN = 1;
 
 let loydetty = null;
 let etsinta = null;
+let metatietoAktiivisia = 0;
+const metatietoJono = [];
+const sha256Varmistukset = new Map();
+
+function sha256Manifestista(manifesti, tiedostonimi) {
+    const escapet = tiedostonimi.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const osuma = String(manifesti).match(new RegExp(`^([a-f\\d]{64})\\s+\\*?${escapet}\\s*$`, "mi"));
+    if (!osuma) throw new Error(`Virallisesta SHA256-tiedostosta puuttuu ${tiedostonimi}.`);
+    return osuma[1].toLowerCase();
+}
+
+async function haeUusinVersio() {
+    const response = await fetch(JULKAISU_API_URL, {
+        headers: {
+            Accept: "application/vnd.github+json",
+            "User-Agent": "2etakas-yt-dlp-installer"
+        },
+        signal: AbortSignal.timeout(30_000)
+    });
+    if (!response.ok) throw new Error(`yt-dlp-julkaisun haku epäonnistui (HTTP ${response.status}).`);
+
+    const release = await response.json();
+    const versio = release?.tag_name;
+    if (typeof versio !== "string" || !/^\d{4}\.\d{2}\.\d{2}$/.test(versio)) {
+        throw new Error("yt-dlp:n virallisen julkaisun versionumero oli virheellinen.");
+    }
+    return versio;
+}
+
+async function haeSha256(versio, tiedostonimi) {
+    const avain = `${versio}:${tiedostonimi}`;
+    if (sha256Varmistukset.has(avain)) return sha256Varmistukset.get(avain);
+
+    const haku = (async () => {
+        const url = `${JULKAISU_URL}/${encodeURIComponent(versio)}/SHA2-256SUMS`;
+        const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+        if (!response.ok) throw new Error(`yt-dlp:n SHA256-tiedoston haku epäonnistui (HTTP ${response.status}).`);
+        const manifesti = await response.text();
+        if (Buffer.byteLength(manifesti) > 64 * 1024) throw new Error("yt-dlp:n SHA256-tiedosto oli odottamattoman suuri.");
+        return sha256Manifestista(manifesti, tiedostonimi);
+    })();
+
+    sha256Varmistukset.set(avain, haku);
+    try {
+        return await haku;
+    } catch (err) {
+        sha256Varmistukset.delete(avain);
+        throw err;
+    }
+}
+
+async function tiedostonSha256(polku) {
+    const hash = createHash("sha256");
+    for await (const pala of fs.createReadStream(polku)) hash.update(pala);
+    return hash.digest("hex");
+}
+
+function tarkistaTempHakemisto() {
+    let viimeisinVirhe = null;
+    for (const [juuri, polku] of [["project", BIN_KANSIO], ["system", os.tmpdir()]]) {
+        let koepolku = null;
+        try {
+            fs.mkdirSync(polku, { recursive: true });
+            koepolku = fs.mkdtempSync(path.join(polku, ".2etakas-ytdlp-check-"));
+            const tila = typeof fs.statfsSync === "function" ? fs.statfsSync(polku) : null;
+            return {
+                juuri,
+                polku,
+                kirjoitettavissa: true,
+                vapaataTavua: tila ? tila.bavail * tila.bsize : null,
+                vapaitaInodeja: process.platform !== "win32" && Number.isFinite(tila?.ffree) ? tila.ffree : null
+            };
+        } catch (err) {
+            viimeisinVirhe = err;
+        } finally {
+            if (koepolku) fs.rmSync(koepolku, { recursive: true, force: true });
+        }
+    }
+
+    throw new Error(`yt-dlp:n temp-hakemistoa ei voi käyttää (${viimeisinVirhe?.code ?? viimeisinVirhe?.message ?? "tuntematon virhe"}).`);
+}
+
+async function suoritaMetatietoJonossa(tehtava) {
+    if (metatietoAktiivisia >= METATIETO_MAX_RINNAKKAIN) {
+        await new Promise(resolve => metatietoJono.push(resolve));
+    } else {
+        metatietoAktiivisia++;
+    }
+
+    try {
+        return await tehtava();
+    } finally {
+        const seuraava = metatietoJono.shift();
+        if (seuraava) seuraava();
+        else metatietoAktiivisia--;
+    }
+}
 
 function turvallinenDiagnostiikkaTeksti(teksti) {
     return String(teksti ?? "")
@@ -102,7 +204,18 @@ function lisaaProsessivirheenDiagnostiikka(virhe, vaihe, stderr = "") {
 }
 
 function kaynnistaYtdlpProsessi(polku, args, options = {}) {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "2etakas-ytdlp-"));
+    let tmpDir;
+    try {
+        fs.mkdirSync(BIN_KANSIO, { recursive: true });
+        tmpDir = fs.mkdtempSync(path.join(BIN_KANSIO, ".2etakas-ytdlp-"));
+    } catch (err) {
+        console.warn("[ytdlp-temp-root] " + JSON.stringify({
+            root: "project",
+            code: err?.code ?? null,
+            fallback: "system-temp"
+        }));
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "2etakas-ytdlp-"));
+    }
     const env = {
         ...process.env,
         ...options.env,
@@ -208,29 +321,98 @@ function julkaisunNimi() {
     return null;
 }
 
-async function lataaBinaari() {
+async function varmistaHallittuBinaari(polku, versio) {
+    const hallittuPolku = path.resolve(BIN_KANSIO, paikallinenNimi());
+    if (path.resolve(polku) !== hallittuPolku || !/^\d{4}\.\d{2}\.\d{2}$/.test(versio)) return null;
+
+    const nimi = julkaisunNimi();
+    if (!nimi) return null;
+    const odotettu = await haeSha256(versio, nimi);
+    const toteutunut = await tiedostonSha256(polku);
+    return { kelpaa: toteutunut === odotettu };
+}
+
+async function lataaTarkistettuAsset(url, kohde, odotettuSha256) {
+    const response = await fetch(url, { signal: AbortSignal.timeout(120_000) });
+    if (!response.ok) throw new Error(`yt-dlp:n lataus epäonnistui (HTTP ${response.status}).`);
+    if (!response.body) throw new Error("yt-dlp:n latausvastauksesta puuttui tiedosto.");
+
+    const sisallonPituus = Number(response.headers.get("content-length"));
+    if (Number.isFinite(sisallonPituus) && sisallonPituus > BINARI_MAX_TAVUA) {
+        throw new Error("yt-dlp:n ladattava tiedosto ylitti kokorajan.");
+    }
+
+    const hash = createHash("sha256");
+    let ladattu = 0;
+    const tarkistavaVirta = new Transform({
+        transform(pala, koodaus, valmis) {
+            ladattu += pala.length;
+            if (ladattu > BINARI_MAX_TAVUA) {
+                valmis(new Error("yt-dlp:n ladattava tiedosto ylitti kokorajan."));
+                return;
+            }
+            hash.update(pala);
+            valmis(null, pala);
+        }
+    });
+
+    await pipeline(
+        Readable.fromWeb(response.body),
+        tarkistavaVirta,
+        fs.createWriteStream(kohde, { flags: "wx", mode: 0o700 })
+    );
+
+    if (sisallonPituus && ladattu !== sisallonPituus) {
+        throw new Error("yt-dlp:n lataus jäi kesken (tiedostokoko ei täsmännyt).");
+    }
+    if (!ladattu) throw new Error("yt-dlp:n lataus oli tyhjä.");
+    if (hash.digest("hex") !== odotettuSha256) {
+        throw new Error("yt-dlp:n ladatun tiedoston SHA256 ei täsmännyt viralliseen tarkistussummaan.");
+    }
+}
+
+async function lataaBinaari(haluttuVersio = null) {
     const nimi = julkaisunNimi();
     if (!nimi) throw new Error(`Alustalle ${process.platform}/${process.arch} ei ole valmista yt-dlp-binääriä.`);
 
     fs.mkdirSync(BIN_KANSIO, { recursive: true });
 
+    const versio = haluttuVersio ?? await haeUusinVersio();
+    if (typeof versio !== "string" || !/^\d{4}\.\d{2}\.\d{2}$/.test(versio)) {
+        throw new Error("yt-dlp:n julkaisuversio oli virheellinen.");
+    }
+
     const kohde = path.join(BIN_KANSIO, paikallinenNimi());
-    const vali = `${kohde}.lataus`;
+    const odotettuSha256 = await haeSha256(versio, nimi);
+    const latausKansio = fs.mkdtempSync(path.join(BIN_KANSIO, ".yt-dlp-install-"));
+    const vali = path.join(latausKansio, nimi);
 
-    console.log(`⬇️ Ladataan yt-dlp: ${nimi}`);
+    console.log(`⬇️ Ladataan yt-dlp ${versio}: ${nimi} (SHA256 varmennetaan)`);
 
-    const res = await fetch(JULKAISU_URL + nimi, {
-        redirect: "follow",
-        signal: AbortSignal.timeout(120000)
-    });
+    try {
+        await lataaTarkistettuAsset(`${JULKAISU_URL}/${encodeURIComponent(versio)}/${encodeURIComponent(nimi)}`, vali, odotettuSha256);
+        fs.chmodSync(vali, 0o755);
 
-    if (!res.ok) throw new Error(`yt-dlp:n lataus epäonnistui (HTTP ${res.status}).`);
+        const ladattuVersio = await testaaBinaari(vali);
+        if (ladattuVersio !== versio) {
+            throw new Error(`Ladatun yt-dlp:n versio (${ladattuVersio ?? "ei käynnistynyt"}) ei vastannut julkaisua ${versio}.`);
+        }
 
-    fs.writeFileSync(vali, Buffer.from(await res.arrayBuffer()));
-    fs.chmodSync(vali, 0o755);
-    fs.renameSync(vali, kohde);
+        fs.renameSync(vali, kohde);
+        loydetty = { polku: kohde, versio, sha256Varmennettu: true };
+        console.log(`✅ yt-dlp ${versio} asennettu ja SHA256 varmennettu.`);
+        return loydetty;
+    } finally {
+        await fs.promises.rm(latausKansio, { recursive: true, force: true });
+    }
+}
 
-    return kohde;
+async function paivitaBinaari(polku) {
+    const hallittuPolku = path.resolve(BIN_KANSIO, paikallinenNimi());
+    if (polku && path.resolve(polku) !== hallittuPolku) {
+        throw new Error("Automaattinen varmennettu päivitys koskee vain projektin bin/yt-dlp-tiedostoa.");
+    }
+    return lataaBinaari();
 }
 
 async function loyda() {
@@ -241,18 +423,56 @@ async function loyda() {
 
     etsinta ??= (async () => {
         const polut = ehdokkaat();
+        const tarkistetutPolut = new Set();
+        const hallittuPolku = path.resolve(BIN_KANSIO, paikallinenNimi());
 
         console.log("🔎 Etsitään yt-dlp-ohjelmaa...");
         console.log("📂 Työhakemisto:", process.cwd());
         console.log("🔍 Tarkistettavat polut:", polut);
 
         for (const polku of polut) {
+            const polkuAvain = path.isAbsolute(polku) || polku.includes(path.sep) ? path.resolve(polku) : polku;
+            if (tarkistetutPolut.has(polkuAvain)) continue;
+            tarkistetutPolut.add(polkuAvain);
+
             const versio = await testaaBinaari(polku);
 
             if (versio) {
                 console.log("✅ yt-dlp löytyi:", polku);
                 console.log("📦 Versio:", versio);
-                return { polku, versio };
+
+                if (path.resolve(polku) === hallittuPolku) {
+                    try {
+                        const eheydenTarkistus = await varmistaHallittuBinaari(polku, versio);
+                        if (eheydenTarkistus) {
+                            if (eheydenTarkistus.kelpaa) {
+                                console.info("[ytdlp-sha256] " + JSON.stringify({
+                                    verified: true,
+                                    matches: true,
+                                    version: versio,
+                                    asset: julkaisunNimi()
+                                }));
+                                return { polku, versio, sha256Varmennettu: true };
+                            }
+
+                            console.error("[ytdlp-sha256] Asennetun yt-dlp-binäärin tarkistussumma ei täsmää; haetaan virallinen julkaisu uudelleen.");
+                            try {
+                                return await lataaBinaari(versio);
+                            } catch (err) {
+                                console.error("[ytdlp-sha256] Varmennettu uudelleenlataus epäonnistui:", err.message);
+                                continue;
+                            }
+                        }
+                    } catch (err) {
+                        console.warn("[ytdlp-sha256] " + JSON.stringify({
+                            verified: false,
+                            reason: "official-checksum-unavailable",
+                            code: err?.code ?? null
+                        }));
+                    }
+                }
+
+                return { polku, versio, sha256Varmennettu: false };
             }
 
             console.log("⚠️ Ei löytynyt tai ei käynnistynyt:", polku);
@@ -260,10 +480,7 @@ async function loyda() {
 
         if (process.env.YTDLP_AUTOASENNUS === "1") {
             try {
-                const polku = await lataaBinaari();
-                const versio = await testaaBinaari(polku);
-
-                if (versio) return { polku, versio };
+                return await lataaBinaari();
             } catch (err) {
                 console.error("❌ Automaattinen asennus epäonnistui:", err.message);
             }
@@ -273,7 +490,13 @@ async function loyda() {
         return null;
     })();
 
-    const tulos = await etsinta;
+    let tulos;
+    try {
+        tulos = await etsinta;
+    } catch (err) {
+        etsinta = null;
+        throw err;
+    }
 
     if (tulos) {
         loydetty = tulos;
@@ -317,25 +540,18 @@ async function tiedot(kohde, { lista = false, max = 1, aikarajaMs = 30000 } = {}
         "--", kohde
     ];
 
-    return new Promise((resolve, reject) => {
+    return suoritaMetatietoJonossa(() => new Promise((resolve, reject) => {
         const ytdlpProsessi = kaynnistaYtdlpProsessi(bin.polku, args, { stdio: ["ignore", "pipe", "pipe"] });
         const proc = ytdlpProsessi.proc;
         const osat = [];
         let koko = 0;
         let virheTeksti = "";
         let valmis = false;
+        let aikakatkaistiin = false;
 
         const ajastin = setTimeout(() => {
+            aikakatkaistiin = true;
             proc.kill("SIGKILL");
-            if (!valmis) {
-                valmis = true;
-                reject(luoYtdlpVirhe({
-                    message: "YTDLP_AIKAKATKAISU",
-                    vaihe: "metadata-timeout",
-                    stderr: virheTeksti,
-                    syy: "yt-dlp-metatietahaku ylitti aikarajan"
-                }));
-            }
         }, aikarajaMs);
 
         proc.stdout.on("data", d => {
@@ -362,6 +578,16 @@ async function tiedot(kohde, { lista = false, max = 1, aikarajaMs = 30000 } = {}
             if (valmis) return;
             valmis = true;
 
+            if (aikakatkaistiin) {
+                return reject(luoYtdlpVirhe({
+                    message: "YTDLP_AIKAKATKAISU",
+                    vaihe: "metadata-timeout",
+                    exitCode: koodi,
+                    stderr: virheTeksti,
+                    syy: "yt-dlp-metatietahaku ylitti aikarajan"
+                }));
+            }
+
             if (koodi !== 0 || koko > JSON_MAX_TAVUA) {
                 const liianSuuri = koko > JSON_MAX_TAVUA;
                 return reject(luoYtdlpVirhe({
@@ -384,7 +610,7 @@ async function tiedot(kohde, { lista = false, max = 1, aikarajaMs = 30000 } = {}
                 }));
             }
         });
-    });
+    }));
 }
 
 async function virta(kohde) {
@@ -560,5 +786,10 @@ module.exports = {
     turvallinenDiagnostiikkaTeksti,
     stderrDiagnostiikka,
     kaynnistaYtdlpProsessi,
-    suoritaYtdlp
+    suoritaYtdlp,
+    paivitaBinaari,
+    sha256Manifestista,
+    tiedostonSha256,
+    tarkistaTempHakemisto,
+    suoritaMetatietoJonossa
 };
