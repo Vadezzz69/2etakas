@@ -80,10 +80,12 @@ function aloitaRestDiagnostiikka(interaction) {
             const request = Reflect.apply(alkuperainenMakeRequest, this, arguments);
             return Promise.resolve(request).then(
                 response => {
+                    context.requestCompletedAt = Date.now();
                     if (context.result) context.result.httpStatus = Number.isInteger(response?.status) ? response.status : null;
                     return response;
                 },
                 error => {
+                    context.requestCompletedAt = Date.now();
                     if (context.result) context.result.httpStatus = null;
                     throw error;
                 }
@@ -97,6 +99,12 @@ function aloitaRestDiagnostiikka(interaction) {
     const context = {
         interactionId: interaction.id,
         interactionToken: interaction.token,
+        createdTimestamp: interaction.createdTimestamp,
+        requestStartedAt: Date.now(),
+        initiallyDeferred: interaction.deferred,
+        initiallyReplied: interaction.replied,
+        applicationId: interaction.applicationId,
+        clientApplicationId: interaction.client.application?.id ?? null,
         result: null
     };
 
@@ -106,6 +114,11 @@ function aloitaRestDiagnostiikka(interaction) {
             const pyynto = context.result ?? {};
             console.info("[soita-rest-diagnostic] " + JSON.stringify({
                 interactionId: context.interactionId,
+                ageAtRequestMs: Number.isFinite(context.createdTimestamp) ? context.requestStartedAt - context.createdTimestamp : null,
+                requestDurationMs: Number.isFinite(context.requestCompletedAt) ? context.requestCompletedAt - context.requestStartedAt : null,
+                initiallyDeferred: context.initiallyDeferred,
+                initiallyReplied: context.initiallyReplied,
+                applicationIdMatches: Boolean(context.clientApplicationId && context.applicationId && context.clientApplicationId === context.applicationId),
                 methodMatchesPost: pyynto.methodMatchesPost === true,
                 callbackRouteMatches: pyynto.callbackRouteMatches === true,
                 apiVersionIsV10: pyynto.apiVersionIsV10 === true,
