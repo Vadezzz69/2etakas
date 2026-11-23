@@ -3,6 +3,9 @@ const { kirjaaKomento } = require("../utils/tilastot");
 const { satunnainen } = require("../utils/satunnainen");
 const { VIRHEVIESTIT, VANHAT_KOMENNOT } = require("../utils/comedy/data/viestit");
 
+// Estää saman interaktio-olion käsittelyn kahdesti saman prosessin sisällä.
+const kasitellytInteraktiot = new WeakSet();
+
 function kirjaaInteractionAika(interaction, vaihe, tiedot = {}) {
     if (process.env.SOITA_REST_DIAGNOSTIIKKA === "1") return;
 
@@ -54,6 +57,18 @@ module.exports = {
 
         if (!interaction.isChatInputCommand()) return;
 
+        if (kasitellytInteraktiot.has(interaction)) {
+            console.warn("[interaction-duplicate] " + JSON.stringify({
+                command: interaction.commandName,
+                interactionId: interaction.id,
+                pid: process.pid,
+                deferred: interaction.deferred,
+                replied: interaction.replied
+            }));
+            return;
+        }
+        kasitellytInteraktiot.add(interaction);
+
         if (["soita", "meemi"].includes(interaction.commandName)) {
             console.info("[interaction-compare] " + JSON.stringify({
                 command: interaction.commandName,
@@ -99,7 +114,14 @@ module.exports = {
 
         } catch (err) {
 
-            console.error(`❌ Virhe komennossa /${interaction.commandName}:`, { name: err?.name, code: err?.code });
+            console.error(`❌ Virhe komennossa /${interaction.commandName}:`, {
+                name: err?.name,
+                code: err?.code,
+                interactionId: interaction.id,
+                deferred: interaction.deferred,
+                replied: interaction.replied,
+                pid: process.pid
+            });
             if (Number(err?.code) === 10062) {
                 console.warn("⚠️ Interaction vanheni ennen komennon valmistumista; virhevastausta ei yritetty uudelleen.");
                 return;
