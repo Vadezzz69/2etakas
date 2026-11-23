@@ -82,8 +82,9 @@ käyttäjiä ohjaamasta palvelinta hakemaan mielivaltaisia osoitteita. Suorat l�
   vanha versio lakkaa toimimasta.
 - YouTube voi estää haut palvelinten IP-osoitteilta ("kirjaudu sisään"). Silloin auttaa
   asianmukaisesti hallittu evästetiedosto (`YTDLP_COOKIES`); haku ja äänen lataus kokeilevat
-  automaattisesti myös SoundCloudia. Jos suoran YouTube-linkin metatiedot estyvät, SoundCloud-haku
-  käyttää videon tunnistetta. Yksityisiä tai poistettuja suoria videoita ei korvata toisella kappaleella.
+  automaattisesti myös SoundCloudia. Jos suoran YouTube-linkin metatiedot estyvät, automaattinen
+  SoundCloud-haku vaatii syötteessä kappaleen nimen (ja mahdollisuuksien mukaan artistin); videon
+  tunnistetta ei käytetä hakusanana. Yksityisiä, poistettuja tai rajoitettuja suoria videoita ei korvata.
 - Hakulokit käyttävät tapahtumatunnistetta ja kirjaavat lähteen, vaiheen, keston sekä tulosmäärän.
   Hakusanoja, linkkejä, käyttäjä- tai palvelintunnisteita eikä yt-dlp:n raakavirheitä ei kirjoiteta niihin.
 - Videopalvelut voivat kieltää äänen irrottamisen käyttöehdoissaan. Käyttö on ylläpitäjän vastuulla.

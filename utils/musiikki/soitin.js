@@ -7,7 +7,7 @@
  */
 
 const { asetukset: lueAsetukset, lataaAaniKirjasto } = require("./config");
-const { MusiikkiVirhe, haeKappaleet, hakulause } = require("./lahteet");
+const { MusiikkiVirhe, haeKappaleet, hakulause, onTarkoituksellaSaavuttamaton } = require("./lahteet");
 const ytdlp = require("./ytdlp");
 
 const soittimet = new Map(); // guildId -> Soitin
@@ -38,7 +38,7 @@ function ytdlpVirheluokka(err) {
 
 function voiSoundCloudVarmistus(kappale, err) {
     if (kappale.hakulahde !== "youtube" || !["YouTube", "Spotify"].includes(kappale.lahde)) return false;
-    if (kappale.suoraSyote && ["yksityinen", "poistettu", "ei-saatavilla"].includes(ytdlpVirheluokka(err))) return false;
+    if (kappale.suoraSyote && onTarkoituksellaSaavuttamaton(err)) return false;
     if (err?.message === "YTDLP_PUUTTUU" || ["ENOENT", "EACCES", "EPERM"].includes(err?.code)) return false;
     return true;
 }

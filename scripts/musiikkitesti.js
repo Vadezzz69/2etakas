@@ -633,6 +633,7 @@ testi("YouTube-haku yrittää SoundCloudia teknisen virheen tai tyhjän tuloksen
     try {
         const tulos = await lahteet.haeKappaleet("artistin kappale", { pyytaja: "u", asetukset: ASETUKSET });
         assert.deepEqual(kutsut.map(k => k.split(":")[0]), ["ytsearch5", "scsearch5"]);
+        assert.equal(kutsut[1], "scsearch5:artistin kappale");
         assert.equal(tulos.lahde, "Soundcloud");
         assert.equal(tulos.kappaleet[0].otsikko, "Löytynyt kappale");
         assert.equal(tulos.valittavat, true);
@@ -788,6 +789,36 @@ testi("suora yksityinen tai poistettu linkki ei käynnistä SoundCloud-varahakua
     }
 });
 
+testi("suoran linkin tarkoitukselliset pääsyrajoitukset estävät SoundCloud-korvauksen", () => {
+    const rajoitetut = [
+        "ERROR: This video is private",
+        "ERROR: This video has been removed by the uploader",
+        "ERROR: Video unavailable",
+        "ERROR: This video is geo-restricted",
+        "ERROR: This video is age-restricted",
+        "ERROR: HTTP Error 403: Forbidden"
+    ];
+    for (const stderr of rajoitetut) {
+        assert.equal(
+            lahteet.onTarkoituksellaSaavuttamaton(ytdlp.luoYtdlpVirhe({ stderr })),
+            true,
+            `${stderr} estää varahaun`
+        );
+    }
+
+    for (const stderr of [
+        "Sign in to confirm you’re not a bot",
+        "ERROR: HTTP Error 429: Too Many Requests",
+        "ERROR: Connection reset by peer"
+    ]) {
+        assert.equal(
+            lahteet.onTarkoituksellaSaavuttamaton(ytdlp.luoYtdlpVirhe({ stderr })),
+            false,
+            `${stderr} sallii teknisen varahaun`
+        );
+    }
+});
+
 testi("suoran YouTube-linkin metatietojen kirjautumisvirhe varmistetaan SoundCloud-haulla", async () => {
     const alkuperainen = ytdlp.tiedot;
     const kutsut = [];
@@ -808,18 +839,71 @@ testi("suoran YouTube-linkin metatietojen kirjautumisvirhe varmistetaan SoundClo
     };
 
     try {
-        const tulos = await lahteet.haeKappaleet("https://www.youtube.com/watch?v=video123", {
+        const syote = "https://www.youtube.com/watch?v=video123&artist=Testi&title=Kappale";
+        const tulos = await lahteet.haeKappaleet(syote, {
             pyytaja: "u",
             asetukset: ASETUKSET
         });
-        assert.deepEqual(kutsut, [
-            "https://www.youtube.com/watch?v=video123",
-            "scsearch5:video123"
-        ]);
+        assert.deepEqual(kutsut, [syote, "scsearch5:Testi Kappale"]);
         assert.equal(tulos.lahde, "Soundcloud");
         assert.equal(tulos.kappaleet[0].otsikko, "Löytynyt SoundCloudista");
         assert.equal(tulos.kappaleet[0].suoraSyote, false);
         assert.equal(tulos.valittavat, true);
+    } finally {
+        ytdlp.tiedot = alkuperainen;
+    }
+});
+
+testi("suora YouTube-linkki ilman kappaleen nimeä ei hae SoundCloudia videon tunnisteella", async () => {
+    const alkuperainen = ytdlp.tiedot;
+    const kutsut = [];
+    ytdlp.tiedot = async kohde => {
+        kutsut.push(kohde);
+        throw Object.assign(new Error("YTDLP_VIRHE"), {
+            stderr: "Sign in to confirm you’re not a bot"
+        });
+    };
+
+    try {
+        await assert.rejects(
+            () => lahteet.haeKappaleet("https://www.youtube.com/watch?v=video123", {
+                pyytaja: "u",
+                asetukset: ASETUKSET
+            }),
+            /SoundCloud-varahaku tarvitsee kappaleen nimen/
+        );
+        assert.deepEqual(kutsut, ["https://www.youtube.com/watch?v=video123"]);
+        assert.equal(kutsut.some(kohde => kohde.startsWith("scsearch5:")), false);
+    } finally {
+        ytdlp.tiedot = alkuperainen;
+    }
+});
+
+testi("suoran YouTube-linkin tyhjä SoundCloud-tulos ilmoittaa, ettei kappaletta löytynyt", async () => {
+    const alkuperainen = ytdlp.tiedot;
+    const kutsut = [];
+    ytdlp.tiedot = async kohde => {
+        kutsut.push(kohde);
+        if (kohde.startsWith("https://")) {
+            throw Object.assign(new Error("YTDLP_VIRHE"), {
+                stderr: "Sign in to confirm you’re not a bot"
+            });
+        }
+        return { entries: [] };
+    };
+
+    try {
+        await assert.rejects(
+            () => lahteet.haeKappaleet("https://www.youtube.com/watch?v=id&artist=Artist&title=Song", {
+                pyytaja: "u",
+                asetukset: ASETUKSET
+            }),
+            /eikä vastaavaa kappaletta löytynyt SoundCloudista/
+        );
+        assert.deepEqual(kutsut, [
+            "https://www.youtube.com/watch?v=id&artist=Artist&title=Song",
+            "scsearch5:Artist Song"
+        ]);
     } finally {
         ytdlp.tiedot = alkuperainen;
     }
@@ -938,7 +1022,7 @@ testi("SoundCloudin yt-dlp-virheet luokitellaan ilman stderr-raakatekstiä", () 
     }
 });
 
-testi("suoran linkin tekninen yt-dlp-virhe kokeilee SoundCloudia turvallisesti", async () => {
+testi("suoran linkin yt-dlp-virhe ilman kappaleen nimeä ilmoitetaan turvallisesti", async () => {
     const alkuperainenTiedot = ytdlp.tiedot;
     const alkuperainenInfo = console.info;
     const lokit = [];
@@ -963,11 +1047,11 @@ testi("suoran linkin tekninen yt-dlp-virhe kokeilee SoundCloudia turvallisesti",
         await assert.rejects(
             () => lahteet.haeKappaleet("https://www.youtube.com/watch?v=video-id", { pyytaja: "u", asetukset: ASETUKSET }),
             err => {
-                assert.match(err.message, /YouTube-linkin tietoja ei saatu haettua.*SoundCloudista/);
+                assert.match(err.message, /SoundCloud-varahaku tarvitsee kappaleen nimen/);
                 return true;
             }
         );
-        assert.equal(kutsuja, 2, "SoundCloud-kysely tehdään YouTube-metatietovirheen jälkeen");
+        assert.equal(kutsuja, 1, "SoundCloudia ei haeta ilman kappaleen nimeä");
 
         const virherivi = lokit.find(teksti => teksti.includes('"vaihe":"linkki-virhe"'));
         assert.ok(virherivi, "suoran linkin diagnostinen virherivi löytyi");

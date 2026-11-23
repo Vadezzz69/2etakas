@@ -24,6 +24,14 @@ const SPOTIFY_RE = /\/(?:intl-[a-z-]+\/)?(track|album|playlist)\/([A-Za-z0-9]{10
 const VERSIO_TERMIT = ["cover", "remix", "live", "lyrics", "lyric", "karaoke", "instrumental", "sped up", "slowed", "nightcore", "8d"];
 const YTDLP_HAKUVIRHEET = new Set(["YTDLP_PUUTTUU", "YTDLP_AIKAKATKAISU", "YTDLP_VIRHE"]);
 const PROSESSIN_HAKUVIRHEET = new Set(["ENOENT", "EACCES", "EPERM", "ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EPIPE"]);
+const SOUNDCLOUD_ESTOVIRHEET = new Set([
+    "yksityinen",
+    "poistettu",
+    "ei-saatavilla",
+    "alue-estetty",
+    "ikarajoitus",
+    "kayttooikeusrajoitus"
+]);
 
 function lokitaHaku(hakuId, vaihe, tiedot = {}) {
     console.info(`[musiikki-haku] ${JSON.stringify({ hakuId, vaihe, ...tiedot })}`);
@@ -84,15 +92,19 @@ function lahteenNimi(url) {
     return "muu";
 }
 
-function youtubeHakuavain(url, alkuperainenSyote) {
-    if (url.hostname.toLowerCase() === "youtu.be") {
-        const id = url.pathname.split("/").filter(Boolean)[0];
-        if (id) return id;
-    }
+function youtubeHakuavain(url) {
+    const artisti = url.searchParams.get("artist");
+    const nimi = url.searchParams.get("title") ??
+        url.searchParams.get("track") ??
+        url.searchParams.get("song");
+    if (!nimi?.trim()) return null;
+    const haku = [artisti, nimi].filter(Boolean).join(" ").trim();
+    return haku ? haku.slice(0, HAKU_MAX_PITUUS) : null;
+}
 
-    const id = url.searchParams.get("v") ??
-        url.pathname.match(/^\/(?:shorts|embed|live)\/([^/]+)/i)?.[1];
-    return id || alkuperainenSyote.slice(0, HAKU_MAX_PITUUS);
+function onTarkoituksellaSaavuttamaton(err) {
+    const luokka = ytdlp.stderrDiagnostiikka(err?.stderr ?? err?.yksityiskohta ?? err?.message).stderrLuokka;
+    return SOUNDCLOUD_ESTOVIRHEET.has(luokka);
 }
 
 function ytdlpDiagnostiikka(err) {
@@ -471,6 +483,7 @@ async function haeKappaleet(syote, { pyytaja, hakulahde, asetukset }) {
         } catch (err) {
             const lahde = lahteenNimi(url);
             const stderrLuokka = ytdlp.stderrDiagnostiikka(err?.stderr ?? err?.yksityiskohta).stderrLuokka;
+            const soundCloudHaku = youtubeHakuavain(url);
             lokitaHaku(hakuId, "linkki-virhe", {
                 syote: "linkki",
                 hakutapa: "suora-linkki",
@@ -481,10 +494,20 @@ async function haeKappaleet(syote, { pyytaja, hakulahde, asetukset }) {
 
             if (
                 lahde === "YouTube" &&
-                !["yksityinen", "poistettu", "ei-saatavilla"].includes(stderrLuokka) &&
+                !onTarkoituksellaSaavuttamaton(err) &&
                 onTunnettuHakuvirhe(err) &&
                 !ytDlpEiKaynnisty(err)
             ) {
+                if (!soundCloudHaku) {
+                    lokitaHaku(hakuId, "varahaku-ohitettiin", {
+                        lahde: "soundcloud",
+                        syy: "hakusanaa-ei-saatavilla"
+                    });
+                    throw new MusiikkiVirhe(
+                        "YouTube-linkin metatietoja ei saatu. SoundCloud-varahaku tarvitsee kappaleen nimen — anna artisti ja kappaleen nimi tai SoundCloud-linkki."
+                    );
+                }
+
                 lokitaHaku(hakuId, "varahaku-alkoi", {
                     lahde: "soundcloud",
                     syy: stderrLuokka
@@ -492,7 +515,7 @@ async function haeKappaleet(syote, { pyytaja, hakulahde, asetukset }) {
 
                 try {
                     const varahaku = await haeTekstiLahteesta(
-                        youtubeHakuavain(url, teksti),
+                        soundCloudHaku,
                         { pyytaja, lahde: "soundcloud", asetukset, hakuId }
                     );
                     if (varahaku.kappaleet.length) {
@@ -665,5 +688,6 @@ module.exports = {
     keraaSpotifyKappaleet,
     ytdlpKappale,
     suodata,
-    jarjestaOsumat
+    jarjestaOsumat,
+    onTarkoituksellaSaavuttamaton
 };
