@@ -582,13 +582,119 @@ testi("hakutulosten järjestys suosii pyytämätöntä remix-versiota alkuperäi
     assert.equal(tulokset[1].otsikko, "Song Remix");
 });
 
+testi("tekstihaku sietää kirjoitusvirheitä, osanimiä ja sanojen eri järjestyksiä", async () => {
+    const alkuperainen = ytdlp.tiedot;
+    const haut = [];
+    ytdlp.tiedot = async kohde => {
+        haut.push(kohde);
+        const kappale = kohde.toLowerCase().endsWith(":宇多田ヒカル first love")
+            ? { title: "First Love", artists: ["宇多田ヒカル"], webpage_url: "https://www.youtube.com/watch?v=first-love" }
+            : { title: "Never Gonna Give You Up", artists: ["Rick Astley"], webpage_url: "https://www.youtube.com/watch?v=never-gonna" };
+        return {
+            entries: [{ ...kappale, duration: 213, extractor_key: "Youtube" }]
+        };
+    };
+
+    try {
+        for (const kysely of [
+            "rick astley",
+            "rick astly",
+            "give you up",
+            "up astley never rick give you gonna",
+            "never ganna give you up"
+        ]) {
+            const tulos = await lahteet.haeKappaleet(kysely, { pyytaja: "u", asetukset: ASETUKSET });
+            assert.equal(tulos.kappaleet[0].otsikko, "Never Gonna Give You Up", kysely);
+            assert.equal(tulos.hakutapa, "tarkka", kysely);
+            assert.equal(tulos.arviot[0].samankaltaisuus >= 0.82, true, kysely);
+        }
+
+        assert.equal(haut.length, 5, "laadukkaat osumat eivät käynnistä hidasta lisähakua");
+
+        const kansainvalinen = await lahteet.haeKappaleet("宇多田ヒカル First Love", { pyytaja: "u", asetukset: ASETUKSET });
+        assert.equal(kansainvalinen.kappaleet[0].otsikko, "First Love");
+        assert.equal(haut.length, 6);
+    } finally {
+        ytdlp.tiedot = alkuperainen;
+    }
+});
+
+testi("heikon tarkan haun jälkeen joustava hakulause löytää ja perustelee osuman", async () => {
+    const alkuperainen = ytdlp.tiedot;
+    const alkuperainenInfo = console.info;
+    const haut = [];
+    const lokit = [];
+    ytdlp.tiedot = async kohde => {
+        haut.push(kohde);
+        if (kohde === "ytsearch5:space oddity") {
+            return { entries: [{ title: "Moon River", artist: "Andy Williams", webpage_url: "https://youtu.be/moon" }] };
+        }
+        return {
+            entries: [{
+                title: "Space Oddity",
+                artist: "David Bowie",
+                webpage_url: "https://youtu.be/space-oddity",
+                duration: 315,
+                extractor_key: "Youtube"
+            }]
+        };
+    };
+    console.info = rivi => lokit.push(String(rivi));
+
+    try {
+        const tulos = await lahteet.haeKappaleet("space oddity", { pyytaja: "u", asetukset: ASETUKSET });
+        assert.deepEqual(haut, ["ytsearch5:space oddity", "ytsearch5:oddity"]);
+        assert.equal(tulos.kappaleet[0].otsikko, "Space Oddity");
+        assert.equal(tulos.hakutapa, "tarkka+joustava");
+        assert.equal(tulos.valinnanSyy, "otsikon-tasmays");
+
+        const rivit = lokit
+            .filter(rivi => rivi.startsWith("[musiikki-haku] "))
+            .map(rivi => JSON.parse(rivi.slice("[musiikki-haku] ".length)));
+        const tarkka = rivit.find(rivi => rivi.vaihe === "lahde-valmis" && rivi.hakumenetelma === "tarkka");
+        const joustava = rivit.find(rivi => rivi.vaihe === "lahde-valmis" && rivi.hakumenetelma === "joustava");
+        const valmis = rivit.find(rivi => rivi.vaihe === "haku-valmis");
+        assert.equal(tarkka.laadukkaitaTuloksia, 0);
+        assert.equal(joustava.laadukkaitaTuloksia, 1);
+        assert.equal(valmis.hakutapa, "tarkka+joustava");
+        assert.equal(valmis.valinnanSyy, "otsikon-tasmays");
+    } finally {
+        ytdlp.tiedot = alkuperainen;
+        console.info = alkuperainenInfo;
+    }
+});
+
+testi("heikkoa osumaa ei hyväksytä, vaikka YouTube palauttaa tuloksia", async () => {
+    const alkuperainen = ytdlp.tiedot;
+    const haut = [];
+    ytdlp.tiedot = async kohde => {
+        haut.push(kohde);
+        return { entries: [{ title: "Moon River", artist: "Andy Williams", webpage_url: "https://soundcloud.com/a/moon" }] };
+    };
+
+    try {
+        await assert.rejects(
+            () => lahteet.haeKappaleet("space oddity", {
+                pyytaja: "u",
+                hakulahde: "soundcloud",
+                asetukset: ASETUKSET
+            }),
+            /Kappaletta ei löytynyt SoundCloudista/
+        );
+        assert.deepEqual(haut, ["scsearch5:space oddity", "scsearch5:oddity"]);
+    } finally {
+        ytdlp.tiedot = alkuperainen;
+    }
+});
+
 testi("haeKappaleet: tekstihaku käyttää ytsearch/scsearch ja linkit annetaan --erottimen jälkeen yt-dlp:lle", async () => {
     const alkuperainen = ytdlp.tiedot;
     const kutsut = [];
     ytdlp.tiedot = async (kohde, valinnat) => {
         kutsut.push({ kohde, valinnat });
         if (kohde.startsWith("ytsearch5:") || kohde.startsWith("scsearch5:")) {
-            return { entries: [{ title: "Löytyi", webpage_url: "https://www.youtube.com/watch?v=q", duration: 60, extractor_key: "Youtube" }] };
+            const haku = kohde.slice(kohde.indexOf(":") + 1);
+            return { entries: [{ title: haku, webpage_url: "https://www.youtube.com/watch?v=q", duration: 60, extractor_key: "Youtube" }] };
         }
         return { entries: [{ title: "L1", webpage_url: "https://youtu.be/1", duration: 60 }, { title: "L2", webpage_url: "https://youtu.be/2", duration: 60 }] };
     };
@@ -627,7 +733,7 @@ testi("YouTube-haku yrittää SoundCloudia teknisen virheen tai tyhjän tuloksen
     ytdlp.tiedot = async kohde => {
         kutsut.push(kohde);
         if (kohde.startsWith("ytsearch5:")) throw Object.assign(new Error("YTDLP_VIRHE"), { yksityiskohta: "temporary YouTube failure" });
-        return { entries: [{ title: "Löytynyt kappale", webpage_url: "https://soundcloud.com/a/kappale", duration: 180, extractor_key: "Soundcloud" }] };
+        return { entries: [{ title: "Löytynyt kappale", artists: ["Artistin"], webpage_url: "https://soundcloud.com/a/kappale", duration: 180, extractor_key: "Soundcloud" }] };
     };
 
     try {
@@ -645,13 +751,13 @@ testi("YouTube-haku yrittää SoundCloudia teknisen virheen tai tyhjän tuloksen
     ytdlp.tiedot = async kohde => {
         kutsut.push(kohde);
         if (kohde.startsWith("ytsearch5:")) return { entries: [] };
-        return { entries: [{ title: "Varatuloksen kappale", artists: ["SoundCloud artist"], permalink_url: "https://soundcloud.com/a/varatulos" }] };
+        return { entries: [{ title: "Toinen kappale", artists: ["SoundCloud artist"], permalink_url: "https://soundcloud.com/a/varatulos" }] };
     };
 
     try {
         const tulos = await lahteet.haeKappaleet("toinen kappale", { pyytaja: "u", asetukset: ASETUKSET });
-        assert.deepEqual(kutsut.map(k => k.split(":")[0]), ["ytsearch5", "scsearch5"]);
-        assert.equal(tulos.kappaleet[0].otsikko, "Varatuloksen kappale");
+        assert.deepEqual(kutsut.map(k => k.split(":")[0]), ["ytsearch5", "ytsearch5", "scsearch5"]);
+        assert.equal(tulos.kappaleet[0].otsikko, "Toinen kappale");
         assert.equal(tulos.kappaleet[0].artisti, "SoundCloud artist");
     } finally {
         ytdlp.tiedot = alkuperainen;
@@ -662,7 +768,7 @@ testi("SoundCloud-varahaun lokit laskevat JSONin, muunnokset, suodatukset ja lop
     const alkuperainenTiedot = ytdlp.tiedot;
     const alkuperainenInfo = console.info;
     const lokit = [];
-    const hakuteksti = "ei-saa-nakya-lokeissa";
+    const hakuteksti = "Kelvollinen";
     const soundcloudUrl = "https://soundcloud.com/private-artist/private-track";
 
     ytdlp.tiedot = async kohde => {
@@ -831,7 +937,8 @@ testi("suoran YouTube-linkin metatietojen kirjautumisvirhe varmistetaan SoundClo
         }
         return {
             entries: [{
-                title: "Löytynyt SoundCloudista",
+                title: "Kappale",
+                artist: "Testi",
                 permalink_url: "https://soundcloud.com/testi/loytynyt",
                 extractor_key: "Soundcloud"
             }]
@@ -846,7 +953,7 @@ testi("suoran YouTube-linkin metatietojen kirjautumisvirhe varmistetaan SoundClo
         });
         assert.deepEqual(kutsut, [syote, "scsearch5:Testi Kappale"]);
         assert.equal(tulos.lahde, "Soundcloud");
-        assert.equal(tulos.kappaleet[0].otsikko, "Löytynyt SoundCloudista");
+        assert.equal(tulos.kappaleet[0].otsikko, "Kappale");
         assert.equal(tulos.kappaleet[0].suoraSyote, false);
         assert.equal(tulos.valittavat, true);
     } finally {
@@ -902,7 +1009,8 @@ testi("suoran YouTube-linkin tyhjä SoundCloud-tulos ilmoittaa, ettei kappaletta
         );
         assert.deepEqual(kutsut, [
             "https://www.youtube.com/watch?v=id&artist=Artist&title=Song",
-            "scsearch5:Artist Song"
+            "scsearch5:Artist Song",
+            "scsearch5:song artist"
         ]);
     } finally {
         ytdlp.tiedot = alkuperainen;
@@ -958,7 +1066,7 @@ testi("yt-dlp-virheet muutetaan käyttäjäystävällisiksi viesteiksi", async (
             () => lahteet.haeKappaleet("ei-osumaa", { pyytaja: "u", asetukset: ASETUKSET }),
             /ei löytynyt YouTubesta eikä SoundCloudista/
         );
-        assert.equal(kutsuja, 2);
+        assert.equal(kutsuja, 4, "tyhjän monisanaisen haun joustava vaihtoehto haetaan molemmista lähteistä");
 
         ytdlp.tiedot = async () => {
             throw Object.assign(new Error("YTDLP_VIRHE"), { yksityiskohta: "ERROR: This video is unavailable" });
@@ -1104,6 +1212,7 @@ testi("tekstihaku lokittaa YouTube- ja SoundCloud-virheet erikseen ja jatkaa seu
         return {
             entries: [{
                 title: "Löytynyt seuraavalla haulla",
+                artists: ["Toinen erillinen haku"],
                 webpage_url: "https://www.youtube.com/watch?v=ok",
                 extractor_key: "Youtube",
                 duration: 120
@@ -1260,6 +1369,88 @@ komentoTesti("/soita kuittaa interactionin ennen hakua", async () => {
         assert.equal(lokiEnnenKuittausta, false, "ajoituslokien tulostus ei saa viivästyttää kuittausta");
     } finally {
         console.info = alkuperainenInfo;
+        y.siivoa();
+    }
+});
+
+komentoTesti("kaksi käyttäjää voi hakea /soita yhtä aikaa samaan jonoon", async () => {
+    const y = komentoYmparisto();
+    const vanhaDiagnostiikka = process.env.SOITA_REST_DIAGNOSTIIKKA;
+    const alkuperainenTiedot = ytdlp.tiedot;
+    let haut = 0;
+    let vapautaHaut;
+    let aikakatkaisu;
+    const molemmatHaut = new Promise((resolve, reject) => {
+        vapautaHaut = () => {
+            clearTimeout(aikakatkaisu);
+            resolve();
+        };
+        aikakatkaisu = setTimeout(() => reject(new Error("Molemmat samanaikaiset haut eivät käynnistyneet.")), 2_000);
+    });
+
+    process.env.SOITA_REST_DIAGNOSTIIKKA = "used";
+    ytdlp.tiedot = async (...args) => {
+        if (++haut === 2) vapautaHaut();
+        await molemmatHaut;
+        return alkuperainenTiedot(...args);
+    };
+
+    try {
+        const eka = y.interaktio({ valinnat: { haku: "ensimmäinen kappale" } });
+        const toka = y.interaktio({ valinnat: { haku: "toinen kappale" } });
+        eka.user.id = "kayttaja-1";
+        toka.user.id = "kayttaja-2";
+
+        await Promise.all([
+            y.komento("soita").execute(eka),
+            y.komento("soita").execute(toka)
+        ]);
+
+        const soitin = y.soitinModuuli.haeSoitin("g1");
+        assert.ok(soitin);
+        assert.equal(eka.deferCalls, 1);
+        assert.equal(toka.deferCalls, 1);
+        assert.equal((soitin.nyt ? 1 : 0) + soitin.jono.length, 2);
+        assert.deepEqual(
+            new Set([soitin.nyt, ...soitin.jono].filter(Boolean).map(kappale => kappale.otsikko)),
+            new Set([
+                "Haku: ytsearch5:ensimmäinen kappale",
+                "Haku: ytsearch5:toinen kappale"
+            ])
+        );
+    } finally {
+        clearTimeout(aikakatkaisu);
+        ytdlp.tiedot = alkuperainenTiedot;
+        if (vanhaDiagnostiikka === undefined) delete process.env.SOITA_REST_DIAGNOSTIIKKA;
+        else process.env.SOITA_REST_DIAGNOSTIIKKA = vanhaDiagnostiikka;
+        y.siivoa();
+    }
+});
+
+komentoTesti("jonoon lisätty kappale säilyy vastauspäivityksen epäonnistuessa", async () => {
+    const y = komentoYmparisto();
+    const vanhaDiagnostiikka = process.env.SOITA_REST_DIAGNOSTIIKKA;
+    process.env.SOITA_REST_DIAGNOSTIIKKA = "used";
+    try {
+        const i = y.interaktio({ valinnat: { haku: "jonoon jäävä kappale" } });
+        const alkuperainenEditReply = i.editReply;
+        i.editReply = async viesti => {
+            if (viesti?.embeds?.length) {
+                throw Object.assign(new Error("Unknown interaction"), { code: 10062, status: 404 });
+            }
+            return alkuperainenEditReply(viesti);
+        };
+
+        await assert.rejects(y.komento("soita").execute(i), err => err.code === 10062);
+
+        const soitin = y.soitinModuuli.haeSoitin("g1");
+        assert.ok(soitin);
+        assert.equal(i.deferCalls, 1);
+        assert.equal((soitin.nyt ? 1 : 0) + soitin.jono.length, 1);
+        assert.equal(soitin.nyt.otsikko, "Haku: ytsearch5:jonoon jäävä kappale");
+    } finally {
+        if (vanhaDiagnostiikka === undefined) delete process.env.SOITA_REST_DIAGNOSTIIKKA;
+        else process.env.SOITA_REST_DIAGNOSTIIKKA = vanhaDiagnostiikka;
         y.siivoa();
     }
 });

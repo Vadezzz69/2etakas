@@ -1,7 +1,7 @@
 /**
  * Muuttaa käyttäjän syötteen (hakusana tai linkki) soittolistaksi.
  *
- * - tekstihaku       -> YouTube (ytsearch); tyhjä tai teknisesti epäonnistunut haku varmistetaan SoundCloudista
+ * - tekstihaku       -> tarkka YouTube-haku, tarvittaessa joustava haku ja lopuksi SoundCloud-varmistus
  * - YouTube/SoundCloud/Bandcamp/... -linkki -> yt-dlp lukee tiedot
  * - Spotify-linkki   -> luetaan vain kappaleiden NIMET; ääni haetaan haulla
  *                       YouTubesta/SoundCloudista (Spotifyn omaa ääntä ei voi soittaa)
@@ -20,6 +20,8 @@ class MusiikkiVirhe extends Error {
 
 const HAKU_MAX_PITUUS = 200;
 const HAKU_TULOSTEN_MAARA = 5;
+const OSUMA_LAATU_MIN = 0.62;
+const OSUMA_LAATU_VAHVA = 0.82;
 const SPOTIFY_RE = /\/(?:intl-[a-z-]+\/)?(track|album|playlist)\/([A-Za-z0-9]{10,32})/;
 const VERSIO_TERMIT = ["cover", "remix", "live", "lyrics", "lyric", "karaoke", "instrumental", "sped up", "slowed", "nightcore", "8d"];
 const YTDLP_HAKUVIRHEET = new Set(["YTDLP_PUUTTUU", "YTDLP_AIKAKATKAISU", "YTDLP_VIRHE"]);
@@ -40,20 +42,73 @@ function lokitaHaku(hakuId, vaihe, tiedot = {}) {
 function hakuteksti(teksti) {
     return String(teksti)
         .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\p{M}/gu, "")
         .toLowerCase()
-        .replace(/[^a-z0-9]+/g, " ")
+        .replace(/[^\p{L}\p{N}]+/gu, " ")
         .trim();
 }
 
-function osumaPisteet(kysely, kappale) {
+function muokkausetaisyys(a, b) {
+    let edellinen = Array.from({ length: b.length + 1 }, (_, i) => i);
+
+    for (let i = 1; i <= a.length; i++) {
+        const nykyinen = [i];
+        for (let j = 1; j <= b.length; j++) {
+            nykyinen[j] = Math.min(
+                nykyinen[j - 1] + 1,
+                edellinen[j] + 1,
+                edellinen[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+            );
+        }
+        edellinen = nykyinen;
+    }
+
+    return edellinen[b.length];
+}
+
+function sananSamankaltaisuus(a, b) {
+    if (a === b) return 1;
+    const lyhyempi = Math.min(a.length, b.length);
+    const pidempi = Math.max(a.length, b.length);
+    if (lyhyempi < 3) return 0;
+
+    if ((a.startsWith(b) || b.startsWith(a)) && lyhyempi / pidempi >= 0.4) {
+        return 0.75 + 0.25 * (lyhyempi / pidempi);
+    }
+
+    if (pidempi > 48) return 0;
+    const samankaltaisuus = 1 - muokkausetaisyys(a, b) / pidempi;
+    return samankaltaisuus >= 0.68 ? samankaltaisuus : 0;
+}
+
+function arvioiOsuma(kysely, kappale) {
     const siistiKysely = hakuteksti(kysely);
     const otsikko = hakuteksti(kappale.otsikko);
     const artisti = hakuteksti(kappale.artisti ?? "");
-    const kaikkiSanat = new Set(`${otsikko} ${artisti}`.split(/\s+/).filter(Boolean));
     const kyselynSanat = siistiKysely.split(/\s+/).filter(Boolean);
-    const osumat = kyselynSanat.filter(sana => kaikkiSanat.has(sana)).length;
-    let pisteet = kyselynSanat.length ? (osumat / kyselynSanat.length) * 10 : 0;
+    const ehdokkaanSanat = `${otsikko} ${artisti}`.split(/\s+/).filter(Boolean);
+    const sanapisteet = kyselynSanat.map(sana =>
+        Math.max(0, ...ehdokkaanSanat.map(ehdokas => sananSamankaltaisuus(sana, ehdokas)))
+    );
+    const laatu = sanapisteet.length
+        ? sanapisteet.reduce((summa, piste) => summa + piste, 0) / sanapisteet.length
+        : 0;
+    const epatarkatSanat = sanapisteet.filter(piste => piste > 0 && piste < 1).length;
+    const valinnanSyy = otsikko === siistiKysely
+        ? "otsikon-tasmays"
+        : sanapisteet.length && sanapisteet.every(piste => piste === 1)
+            ? "sanat-osuvat-jarjestyksesta-riippumatta"
+            : epatarkatSanat
+                ? "kirjoitusvirhe-tai-osittainen-sana"
+                : "osittainen-artistin-tai-otsikon-osuma";
+
+    return { laatu, epatarkatSanat, valinnanSyy };
+}
+
+function osumaPisteet(kysely, kappale, arvio = arvioiOsuma(kysely, kappale)) {
+    const siistiKysely = hakuteksti(kysely);
+    const otsikko = hakuteksti(kappale.otsikko);
+    let pisteet = arvio.laatu * 10;
 
     if (otsikko === siistiKysely) pisteet += 4;
     if (otsikko.includes(siistiKysely) && siistiKysely) pisteet += 2;
@@ -70,11 +125,42 @@ function osumaPisteet(kysely, kappale) {
     return pisteet;
 }
 
-function jarjestaOsumat(kysely, kappaleet) {
+function arvioiOsumat(kysely, kappaleet) {
     return kappaleet
-        .map((kappale, indeksi) => ({ kappale, indeksi, pisteet: osumaPisteet(kysely, kappale) }))
-        .sort((a, b) => b.pisteet - a.pisteet || a.indeksi - b.indeksi)
-        .map(osuma => osuma.kappale);
+        .map((kappale, indeksi) => {
+            const arvio = arvioiOsuma(kysely, kappale);
+            return {
+                kappale,
+                indeksi,
+                ...arvio,
+                pisteet: osumaPisteet(kysely, kappale, arvio)
+            };
+        })
+        .sort((a, b) => b.pisteet - a.pisteet || b.laatu - a.laatu || a.indeksi - b.indeksi);
+}
+
+function jarjestaOsumat(kysely, kappaleet) {
+    return arvioiOsumat(kysely, kappaleet).map(osuma => osuma.kappale);
+}
+
+function joustavaHakuteksti(kysely, ehdokkaat) {
+    const sanat = hakuteksti(kysely).split(/\s+/).filter(Boolean);
+    if (sanat.length < 2) return null;
+
+    if (!ehdokkaat.length) return sanat.slice().reverse().join(" ");
+
+    const ehdokkaanSanat = ehdokkaat.flatMap(kappale =>
+        `${hakuteksti(kappale.otsikko)} ${hakuteksti(kappale.artisti ?? "")}`.split(/\s+/).filter(Boolean)
+    );
+    const sanapisteet = sanat.map(sana =>
+        Math.max(0, ...ehdokkaanSanat.map(ehdokas => sananSamankaltaisuus(sana, ehdokas)))
+    );
+    let heikoinIndeksi = 0;
+    for (let i = 1; i < sanapisteet.length; i++) {
+        if (sanapisteet[i] < sanapisteet[heikoinIndeksi]) heikoinIndeksi = i;
+    }
+
+    return sanat.filter((_, i) => i !== heikoinIndeksi).join(" ");
 }
 
 function virheenLuokka(err) {
@@ -135,7 +221,14 @@ function ytDlpEiKaynnisty(err) {
     return err?.message === "YTDLP_PUUTTUU" || ["ENOENT", "EACCES", "EPERM"].includes(err?.code);
 }
 
-async function haeTekstiLahteesta(teksti, { pyytaja, lahde, asetukset, hakuId }) {
+async function haeYhdellaHakusanalla(teksti, {
+    pyytaja,
+    lahde,
+    asetukset,
+    hakuId,
+    vertailuteksti = teksti,
+    hakumenetelma = "tarkka"
+}) {
     const alku = Date.now();
     const etuliite = lahde === "soundcloud" ? "scsearch" : "ytsearch";
     const tapahtuma = `${etuliite}${HAKU_TULOSTEN_MAARA}:${teksti.replace(/\s+/g, " ")}`;
@@ -148,10 +241,14 @@ async function haeTekstiLahteesta(teksti, { pyytaja, lahde, asetukset, hakuId })
     let suodatustulos = null;
     let exitCode = null;
 
-    lokitaHaku(hakuId, "lahde-alkoi", { lahde });
+    lokitaHaku(hakuId, "lahde-alkoi", { lahde, hakumenetelma });
 
     try {
-        const data = await ytdlp.tiedot(tapahtuma, { lista: true, max: HAKU_TULOSTEN_MAARA });
+        const data = await ytdlp.tiedot(tapahtuma, {
+            lista: true,
+            max: HAKU_TULOSTEN_MAARA,
+            aikarajaMs: hakumenetelma === "joustava" ? 10_000 : 30_000
+        });
         jsonPalautui = true;
         exitCode = 0;
         jsonRakenne = Array.isArray(data?.entries) ? "entries" : "yksittainen-tietue";
@@ -165,10 +262,13 @@ async function haeTekstiLahteesta(teksti, { pyytaja, lahde, asetukset, hakuId })
         muunnoksessaHylatty = metadataTietueita - kappaleiksiMuunnettu;
         suodatustulos = suodata(kaikki, asetukset);
         const { kelvolliset, hylatty, hylkaysSyyt } = suodatustulos;
-        const kappaleet = jarjestaOsumat(teksti, kelvolliset).slice(0, HAKU_TULOSTEN_MAARA);
+        const arvioidut = arvioiOsumat(vertailuteksti, kelvolliset);
+        const laadukkaat = arvioidut.filter(osuma => osuma.laatu >= OSUMA_LAATU_MIN);
+        const kappaleet = laadukkaat.slice(0, HAKU_TULOSTEN_MAARA).map(osuma => osuma.kappale);
 
         lokitaHaku(hakuId, "lahde-valmis", {
             lahde,
+            hakumenetelma,
             exitCode,
             jsonPalautui,
             jsonRakenne,
@@ -181,16 +281,20 @@ async function haeTekstiLahteesta(teksti, { pyytaja, lahde, asetukset, hakuId })
             suodatusHylatty: hylatty,
             hylkaysSyyt,
             tuloksia: kelvolliset.length,
+            laadukkaitaTuloksia: laadukkaat.length,
+            parasSamankaltaisuus: arvioidut.length ? Number(arvioidut[0].laatu.toFixed(3)) : null,
+            valinnanSyy: laadukkaat[0]?.valinnanSyy ?? (kelvolliset.length ? "heikko-osuma-ohitettiin" : "ei-osumia"),
             palautettujaTuloksia: kappaleet.length,
             lopullinenTulos: kappaleet.length ? "tuloksia" : "ei-tuloksia",
             kestoMs: Date.now() - alku
         });
 
-        return { kappaleet, hylatty };
+        return { kappaleet, ehdokkaat: kelvolliset, arvioidut, hylatty };
     } catch (err) {
         lokitaHaku(hakuId, "lahde-virhe", {
             syote: "hakusana",
             hakutapa: "hakusana",
+            hakumenetelma,
             lahde: lahde === "soundcloud" ? "SoundCloud" : "YouTube",
             ...ytdlpDiagnostiikka(err),
             exitCode: exitCode ?? (Number.isInteger(err?.exitCode) ? err.exitCode : null),
@@ -207,6 +311,101 @@ async function haeTekstiLahteesta(teksti, { pyytaja, lahde, asetukset, hakuId })
         });
         throw err;
     }
+}
+
+function koostaTekstihakuTulos(arvioidut, hylatty, hakutapa) {
+    const laadukkaat = arvioidut
+        .filter(osuma => osuma.laatu >= OSUMA_LAATU_MIN)
+        .slice(0, HAKU_TULOSTEN_MAARA);
+    const laheiset = laadukkaat.length > 1 &&
+        laadukkaat[0].laatu - laadukkaat[1].laatu <= 0.08;
+    const valinnanSyy = laheiset
+        ? "useita-laheisia-osumia"
+        : laadukkaat[0]?.valinnanSyy ?? (arvioidut.length ? "heikko-osuma-ohitettiin" : "ei-osumia");
+
+    return {
+        kappaleet: laadukkaat.map(osuma => osuma.kappale),
+        hylatty,
+        hakutapa,
+        valinnanSyy,
+        arviot: laadukkaat.map(osuma => ({
+            samankaltaisuus: Number(osuma.laatu.toFixed(3)),
+            valinnanSyy: osuma.valinnanSyy
+        }))
+    };
+}
+
+async function haeTekstiLahteesta(teksti, valinnat) {
+    const tarkka = await haeYhdellaHakusanalla(teksti, {
+        ...valinnat,
+        vertailuteksti: teksti,
+        hakumenetelma: "tarkka"
+    });
+    const parasTarkka = tarkka.arvioidut[0];
+
+    if (parasTarkka?.laatu >= OSUMA_LAATU_VAHVA) {
+        return koostaTekstihakuTulos(tarkka.arvioidut, tarkka.hylatty, "tarkka");
+    }
+
+    const vaihtoehto = joustavaHakuteksti(teksti, tarkka.ehdokkaat);
+    if (!vaihtoehto || hakuteksti(vaihtoehto) === hakuteksti(teksti)) {
+        lokitaHaku(valinnat.hakuId, "joustava-haku-ohitettiin", {
+            lahde: valinnat.lahde,
+            syy: "vaihtoehtoista-hakulausetta-ei-muodostunut",
+            parasSamankaltaisuus: parasTarkka ? Number(parasTarkka.laatu.toFixed(3)) : null
+        });
+        return koostaTekstihakuTulos(tarkka.arvioidut, tarkka.hylatty, "tarkka");
+    }
+
+    lokitaHaku(valinnat.hakuId, "joustava-haku-alkoi", {
+        lahde: valinnat.lahde,
+        syy: tarkka.kappaleet.length ? "heikko-osuma" : "tyhja-tulos",
+        tarkkojaTuloksia: tarkka.ehdokkaat.length,
+        parasSamankaltaisuus: parasTarkka ? Number(parasTarkka.laatu.toFixed(3)) : null
+    });
+
+    let joustava;
+    try {
+        joustava = await haeYhdellaHakusanalla(vaihtoehto, {
+            ...valinnat,
+            vertailuteksti: teksti,
+            hakumenetelma: "joustava"
+        });
+    } catch (err) {
+        if (!tarkka.kappaleet.length) throw err;
+        lokitaHaku(valinnat.hakuId, "joustava-haku-epaonnistui", {
+            lahde: valinnat.lahde,
+            virhe: virheenLuokka(err),
+            syy: "tarkka-haun-laadukas-osuma-sailyi"
+        });
+        return koostaTekstihakuTulos(tarkka.arvioidut, tarkka.hylatty, "tarkka");
+    }
+
+    const nahdytUrlit = new Set();
+    const ehdokkaat = [...tarkka.ehdokkaat, ...joustava.ehdokkaat].filter(kappale => {
+        const url = kappale.url.toLowerCase();
+        if (nahdytUrlit.has(url)) return false;
+        nahdytUrlit.add(url);
+        return true;
+    });
+    const yhdistetytArviot = arvioiOsumat(teksti, ehdokkaat);
+    const tulos = koostaTekstihakuTulos(
+        yhdistetytArviot,
+        Math.max(tarkka.hylatty, joustava.hylatty),
+        "tarkka+joustava"
+    );
+
+    lokitaHaku(valinnat.hakuId, "osumat-arvioitu", {
+        lahde: valinnat.lahde,
+        hakutapa: tulos.hakutapa,
+        tarkkojaTuloksia: tarkka.ehdokkaat.length,
+        joustaviaTuloksia: joustava.ehdokkaat.length,
+        palautettujaTuloksia: tulos.kappaleet.length,
+        parasSamankaltaisuus: tulos.arviot[0]?.samankaltaisuus ?? null,
+        valinnanSyy: tulos.valinnanSyy
+    });
+
+    return tulos;
 }
 
 function hakuVirhe(epaonnistumiset, lahteet) {
@@ -524,6 +723,8 @@ async function haeKappaleet(syote, { pyytaja, hakulahde, asetukset }) {
                         lokitaHaku(hakuId, "haku-valmis", {
                             lahde: "soundcloud",
                             tuloksia: varahaku.kappaleet.length,
+                            hakutapa: varahaku.hakutapa,
+                            valinnanSyy: varahaku.valinnanSyy,
                             lopullinenTulos: "tuloksia"
                         });
                         return {
@@ -531,6 +732,9 @@ async function haeKappaleet(syote, { pyytaja, hakulahde, asetukset }) {
                             hylatty: varahaku.hylatty,
                             lahde: varahaku.kappaleet[0].lahde,
                             valittavat: true,
+                            hakutapa: varahaku.hakutapa,
+                            valinnanSyy: varahaku.valinnanSyy,
+                            arviot: varahaku.arviot,
                             hakuId
                         };
                     }
@@ -589,6 +793,8 @@ async function haeKappaleet(syote, { pyytaja, hakulahde, asetukset }) {
                 lokitaHaku(hakuId, "haku-valmis", {
                     lahde,
                     tuloksia: tulos.kappaleet.length,
+                    hakutapa: tulos.hakutapa,
+                    valinnanSyy: tulos.valinnanSyy,
                     lopullinenTulos: "tuloksia"
                 });
                 return {
@@ -596,11 +802,19 @@ async function haeKappaleet(syote, { pyytaja, hakulahde, asetukset }) {
                     hylatty: tulos.hylatty,
                     lahde: tulos.kappaleet[0].lahde,
                     valittavat: true,
+                    hakutapa: tulos.hakutapa,
+                    valinnanSyy: tulos.valinnanSyy,
+                    arviot: tulos.arviot,
                     hakuId
                 };
             }
 
-            epaonnistumiset.push({ tulos: "ei-tuloksia", hylatty: tulos.hylatty });
+            epaonnistumiset.push({
+                tulos: "ei-tuloksia",
+                hylatty: tulos.hylatty,
+                hakutapa: tulos.hakutapa,
+                valinnanSyy: tulos.valinnanSyy
+            });
         } catch (err) {
             if (!onTunnettuHakuvirhe(err)) throw err;
             epaonnistumiset.push({ virhe: virheenLuokka(err) });
@@ -614,6 +828,7 @@ async function haeKappaleet(syote, { pyytaja, hakulahde, asetukset }) {
     lokitaHaku(hakuId, "haku-epäonnistui", {
         lahteet: haetytLahteet,
         tulokset: epaonnistumiset.map(t => t.tulos ?? t.virhe),
+        valintaperusteet: epaonnistumiset.map(t => t.valinnanSyy ?? null),
         lopullinenTulos: epaonnistumiset.every(t => t.tulos === "ei-tuloksia") ? "ei-tuloksia" : "virhe"
     });
     throw hakuVirhe(epaonnistumiset, haetytLahteet);

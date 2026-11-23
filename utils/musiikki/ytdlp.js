@@ -15,6 +15,7 @@ let etsinta = null;
 
 function turvallinenDiagnostiikkaTeksti(teksti) {
     return String(teksti ?? "")
+        .replace(/(\[(?:youtube|soundcloud)\]\s+)[^:\s]+(?=\s*:)/gi, "$1[ID]")
         .replace(/https?:\/\/[^\s"'<>]+/gi, "[URL]")
         .replace(/\b([A-Z_][A-Z0-9_]{2,})\s*=\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/g, "$1=[REDACTED]")
         .replace(/\b((?:YTDLP_)?[A-Z0-9_]*(?:TOKEN|COOKIE|SECRET|PASSWORD|API[_-]?KEY|PROXY)[A-Z0-9_]*)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi, "$1=[REDACTED]")
