@@ -360,9 +360,9 @@ async function virta(kohde) {
 
         const yksityiskohta = turvallinenDiagnostiikkaTeksti(virheTeksti).trim();
         const viesti = koodi === null
-            ? `yt-dlp-prosessi keskeytyi (\${signaali || "tuntematon signaali"})`
-            : `yt-dlp poistui virhekoodilla \${koodi}`;
-        const virhe = new Error(yksityiskohta ? `\${viesti}: \${yksityiskohta}` : viesti);
+            ? `yt-dlp-prosessi keskeytyi (${signaali || "tuntematon signaali"})`
+            : `yt-dlp poistui virhekoodilla ${koodi}`;
+        const virhe = new Error(yksityiskohta ? `${viesti}: ${yksityiskohta}` : viesti);
         virhe.vaihe = "stream-process-exit";
         virhe.exitCode = koodi;
         virhe.stderr = yksityiskohta;
