@@ -44,7 +44,10 @@ ja tallennettuja `!avainsana`-vastauksia (vaatii Message Content Intentin).
 
 Botti soittaa musiikkia äänikanavalla. Komennot: `/soita <haku tai linkki>`, `/jono`, `/nyt`,
 `/ohita`, `/tauko` (pysäytä/jatka), `/toisto` (pois / kappale / jono), `/sekoita`, `/lopeta`.
-`/soita`:ssa voi valita nimihaun lähteeksi YouTuben tai SoundCloudin.
+`/soita` hakee oletuksena YouTubesta ja kokeilee SoundCloudia, jos YouTube-haku epäonnistuu tai ei löydä
+kelvollista tulosta. Käyttäjä voi valita tuloslistasta enintään viidestä vaihtoehdosta; haku suosii
+pyytämätöntä remix-, cover- tai live-versiota vähemmän. Lähteen voi yhä valita komennon valinnaisesta
+`lahde`-asetuksesta, tai oletuksen voi vaihtaa `MUSIIKKI_HAKULAHDE`-asetuksella.
 
 **Mistä soitetaan**
 
@@ -76,7 +79,10 @@ käyttäjiä ohjaamasta palvelinta hakemaan mielivaltaisia osoitteita. Suorat l�
 - **Päivitä yt-dlp säännöllisesti** (`npm run musiikki:tarkista -- --paivita`). YouTube muuttuu usein, ja
   vanha versio lakkaa toimimasta.
 - YouTube voi estää haut palvelinten IP-osoitteilta ("kirjaudu sisään"). Silloin auttaa
-  evästetiedosto (`YTDLP_COOKIES`) tai SoundCloud-haku (`MUSIIKKI_HAKULAHDE=soundcloud`).
+  asianmukaisesti hallittu evästetiedosto (`YTDLP_COOKIES`); tekstihaku kokeilee automaattisesti myös
+  SoundCloudia. Suorat YouTube-linkit eivät vaihda lähdettä, jos video ei ole saatavilla.
+- Hakulokit käyttävät tapahtumatunnistetta ja kirjaavat lähteen, vaiheen, keston sekä tulosmäärän.
+  Hakusanoja, linkkejä, käyttäjä- tai palvelintunnisteita eikä yt-dlp:n raakavirheitä ei kirjoiteta niihin.
 - Videopalvelut voivat kieltää äänen irrottamisen käyttöehdoissaan. Käyttö on ylläpitäjän vastuulla.
 - Jonot ovat muistissa: uudelleenkäynnistys tyhjentää ne. Botti poistuu kanavalta, kun jono on ollut
   tyhjä (`MUSIIKKI_POISTU_JONON_JALKEEN_S`) tai se jää kanavalle yksin (`MUSIIKKI_POISTU_YKSIN_S`).

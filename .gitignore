@@ -1,6 +1,7 @@
 node_modules/
 .env
 .env.local
+/www.youtube.com_cookies.txt
 *.sqlite
 *.db
 .DS_Store
