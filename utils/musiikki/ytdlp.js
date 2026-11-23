@@ -34,6 +34,7 @@ function stderrDiagnostiikka(teksti) {
     let diagnostiikkaTyyppi = "tuntematon";
 
     if (!k.trim()) stderrLuokka = "ei-stderr";
+    else if (/\bdrm(?:[- ]protected| protection| protected)\b|protected by drm/.test(k)) stderrLuokka = "drm-suojattu";
     else if (/sign in|not a bot|authentication required|login required|please log in|must be logged in|not logged in|requires authentication/.test(k)) stderrLuokka = "kirjautuminen";
     else if (/http error 429|\b429\b|too many requests|rate[- ]limit|throttl/.test(k)) stderrLuokka = "rate-limit";
     else if (/private (video|track)|this (video|track) is private/.test(k)) stderrLuokka = "yksityinen";
@@ -60,6 +61,7 @@ function stderrDiagnostiikka(teksti) {
 
     const kuvaukset = {
         "ei-stderr": "yt-dlp ei palauttanut virhetekstiä",
+        "drm-suojattu": "sisältö on DRM-suojattu",
         kirjautuminen: "lähde edellyttää kirjautumista",
         "rate-limit": "lähde rajoitti pyyntöjen määrää",
         yksityinen: "sisältö on yksityinen",

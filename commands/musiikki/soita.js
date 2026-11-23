@@ -353,7 +353,20 @@ async execute(interaction) {
 
             const valittu = haku.valittavat ? await valitseHakutulos(interaction, haku) : null;
             if (haku.valittavat && !valittu) return;
-            const kappaleet = haku.valittavat ? [valittu] : haku.kappaleet;
+            const valittuIndeksi = haku.valittavat
+                ? haku.kappaleet.findIndex(kappale => kappale.url === valittu.url)
+                : -1;
+            const soundCloudVaihtoehdot = valittuIndeksi >= 0
+                ? haku.kappaleet.slice(valittuIndeksi + 1).concat(haku.kappaleet.slice(0, valittuIndeksi))
+                : [];
+            const kappaleet = haku.valittavat
+                ? [{
+                    ...valittu,
+                    varatoistonEhdokkaat: valittu.hakulahde === "soundcloud"
+                        ? soundCloudVaihtoehdot
+                        : []
+                }]
+                : haku.kappaleet;
 
             // Soitin haetaan vasta nyt: haun aikana toinen käyttäjä on voinut luoda sen.
             const soitin = haeTaiLuoSoitin(interaction.guildId);

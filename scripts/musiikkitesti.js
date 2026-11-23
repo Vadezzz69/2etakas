@@ -259,6 +259,161 @@ testi("YouTube-äänivirheen jälkeen SoundCloud käynnistyy samassa jonopaikass
     assert.equal(tapahtumat.find(t => t.tyyppi === "soi").kappale.lahde, "SoundCloud");
 });
 
+testi("SoundCloudin ensimmäisen tuloksen DRM-virhe siirtyy seuraavaan tulokseen", async () => {
+    const soundCloud1 = k("Biisi 1", {
+        lahde: "SoundCloud",
+        hakulahde: "soundcloud",
+        url: "https://soundcloud.com/testi/biisi-1"
+    });
+    const soundCloud2 = k("Biisi 2", {
+        lahde: "SoundCloud",
+        hakulahde: "soundcloud",
+        url: "https://soundcloud.com/testi/biisi-2"
+    });
+    const yritykset = [];
+    const lokit = [];
+    const alkuperainenInfo = console.info;
+    const alkuperainenWarn = console.warn;
+    const { s, soitin, tapahtumat } = luo({
+        luoVirta: async kappale => {
+            yritykset.push(kappale.url);
+            if (kappale.lahde === "YouTube") {
+                throw ytdlp.luoYtdlpVirhe({ stderr: "Sign in to confirm you’re not a bot" });
+            }
+            if (kappale === soundCloud1) {
+                throw ytdlp.luoYtdlpVirhe({
+                    vaihe: "stream-process-exit",
+                    exitCode: 1,
+                    stderr: "ERROR: [soundcloud] track-id: This video is DRM protected"
+                });
+            }
+            return { stream: new PassThrough(), tavuja: () => 100, virhe: () => "", sulje: () => {} };
+        },
+        haeSoundCloud: async () => [soundCloud1, soundCloud2]
+    });
+    console.info = (...args) => lokit.push(args.join(" "));
+    console.warn = (...args) => lokit.push(args.join(" "));
+
+    try {
+        s.lisaa([k("Biisi")]);
+        await aika(10);
+
+        assert.deepEqual(yritykset, [
+            "https://youtu.be/Biisi",
+            soundCloud1.url,
+            soundCloud2.url
+        ]);
+        assert.strictEqual(s.nyt, soundCloud2);
+        assert.deepEqual(soitin.toistettu.map(kappale => kappale.url), [soundCloud2.url]);
+        assert.equal(s.jono.length, 0, "varavaihtoehtoja ei lisätä jonoon");
+        assert.equal(tapahtumat.filter(tapahtuma => tapahtuma.tyyppi === "virhe").length, 0);
+
+        const yrityslokit = lokit
+            .filter(rivi => rivi.includes('"vaihe":"soundcloud-yritys"'))
+            .map(rivi => JSON.parse(rivi.slice(rivi.indexOf("{"))));
+        assert.deepEqual(yrityslokit.map(rivi => rivi.yritys), [1, 2]);
+        assert.equal(yrityslokit[0].virheluokka, "drm-suojattu");
+        assert.equal(yrityslokit[1].virheluokka, null);
+        assert.ok(yrityslokit.every(rivi => rivi.kappaleTunniste));
+        assert.equal(lokit.join("\n").includes(soundCloud1.url), false);
+    } finally {
+        console.info = alkuperainenInfo;
+        console.warn = alkuperainenWarn;
+    }
+});
+
+testi("SoundCloudin DRM-virhe kesken virran käyttää seuraavaa hakutulosta", async () => {
+    const soundCloud1 = k("Suojattu", {
+        lahde: "SoundCloud",
+        hakulahde: "soundcloud",
+        url: "https://soundcloud.com/testi/suojattu",
+        varatoistonEhdokkaat: [k("Toimiva", {
+            lahde: "SoundCloud",
+            hakulahde: "soundcloud",
+            url: "https://soundcloud.com/testi/toimiva"
+        })]
+    });
+    const { s, soitin } = luo({
+        luoVirta: async kappale => ({
+            stream: new PassThrough(),
+            tavuja: () => 10,
+            virhe: () => kappale.url === soundCloud1.url
+                ? "ERROR: [soundcloud] track-id: This video is DRM protected"
+                : "",
+            sulje: () => {}
+        })
+    });
+
+    s.lisaa([soundCloud1]);
+    await aika(5);
+    soitin.emit("error", new Error("YTDLP_VIRHE"));
+    await aika(10);
+
+    assert.equal(s.nyt.url, "https://soundcloud.com/testi/toimiva");
+    assert.equal(soitin.toistettu.at(-1).url, s.nyt.url);
+    assert.equal(s.jono.length, 0);
+});
+
+testi("SoundCloudin DRM-virheet yrittävät enintään viisi eri tulosta ja ilmoittavat loppumisesta", async () => {
+    const kappaleet = Array.from({ length: 5 }, (_, i) => k(`SoundCloud ${i + 1}`, {
+        lahde: "SoundCloud",
+        hakulahde: "soundcloud",
+        url: `https://soundcloud.com/testi/track-${i + 1}`
+    }));
+    const yritykset = [];
+    const { s, tapahtumat } = luo({
+        luoVirta: async kappale => {
+            yritykset.push(kappale.url);
+            throw ytdlp.luoYtdlpVirhe({
+                vaihe: "stream-process-exit",
+                exitCode: 1,
+                stderr: "ERROR: [soundcloud] track-id: This video is DRM protected"
+            });
+        }
+    });
+
+    s.lisaa([{
+        ...kappaleet[0],
+        varatoistonEhdokkaat: [...kappaleet.slice(1), kappaleet[1]]
+    }]);
+    await aika(10);
+
+    const virhe = tapahtumat.find(tapahtuma => tapahtuma.tyyppi === "virhe");
+    assert.equal(yritykset.length, 5);
+    assert.equal(new Set(yritykset).size, 5, "sama URL yritetään vain kerran");
+    assert.equal(virhe.viesti, "SoundCloud-tulosten äänivirtojen avaaminen epäonnistui. Kokeile toista hakua tai lähdettä.");
+    assert.equal(s.nyt, null);
+    assert.equal(s.jono.length, 0);
+});
+
+testi("SoundCloudin verkkovirhe ei hylkää muita tuloksia summittaisesti", async () => {
+    const yritykset = [];
+    const toinen = k("Toinen", {
+        lahde: "SoundCloud",
+        hakulahde: "soundcloud",
+        url: "https://soundcloud.com/testi/toinen"
+    });
+    const { s, tapahtumat } = luo({
+        luoVirta: async kappale => {
+            yritykset.push(kappale.url);
+            throw ytdlp.luoYtdlpVirhe({ stderr: "Unable to download webpage: Connection reset" });
+        }
+    });
+
+    s.lisaa([k("Ensimmäinen", {
+        lahde: "SoundCloud",
+        hakulahde: "soundcloud",
+        url: "https://soundcloud.com/testi/ensimmainen",
+        varatoistonEhdokkaat: [toinen]
+    })]);
+    await aika(10);
+
+    assert.equal(yritykset.length, 1);
+    assert.equal(tapahtumat.filter(tapahtuma => tapahtuma.tyyppi === "virhe").length, 1);
+    assert.equal(s.nyt, null);
+    assert.equal(s.jono.length, 0);
+});
+
 testi("kesken YouTube-äänivirran tuleva virhe käynnistää SoundCloud-varatoiston", async () => {
     const soundCloud = k("Biisi SoundCloudissa", {
         lahde: "SoundCloud",
@@ -1142,6 +1297,7 @@ testi("SoundCloudin yt-dlp-virheet luokitellaan ilman stderr-raakatekstiä", () 
         ["ERROR: Cookies are invalid or expired", "luokittelematon", "yt-dlp palautti luokittelemattoman virhetekstin", "evaste-kirjautuminen"],
         ["ERROR: HTTP Error 500: Internal Server Error", "luokittelematon", "yt-dlp palautti luokittelemattoman virhetekstin", "verkko-http"],
         ["ERROR: Sign in to confirm your account", "kirjautuminen", "lähde edellyttää kirjautumista", "evaste-kirjautuminen"],
+        ["ERROR: [soundcloud] track-id: This video is DRM protected", "drm-suojattu", "sisältö on DRM-suojattu", "tuntematon"],
         ["ERROR: HTTP Error 403: Forbidden", "kayttooikeusrajoitus", "lähde esti sisällön käytön", "verkko-http"],
         ["ERROR: This track is private", "yksityinen", "sisältö on yksityinen", "tuntematon"],
         ["ERROR: This track has been removed", "poistettu", "sisältö on poistettu", "tuntematon"],
@@ -1726,6 +1882,52 @@ komentoTesti("/soita näyttää hakutulokset ja soittaa käyttäjän valitseman 
         assert.match(vaihtoehdot[0].label, /Official Audio/);
         assert.equal(y.soitinModuuli.haeSoitin("g1").nyt.otsikko, "Song Remix");
     } finally { y.siivoa(); }
+});
+
+komentoTesti("/soita käyttää valitun SoundCloud-osuman jälkeen saman haun seuraavaa tulosta", async () => {
+    const y = komentoYmparisto();
+    const alkuperainenTiedot = ytdlp.tiedot;
+    const alkuperainenVirta = ytdlp.virta;
+    const yritykset = [];
+
+    ytdlp.tiedot = async () => ({
+        entries: [
+            { title: "Artist Song One", artist: "Artist", permalink_url: "https://soundcloud.com/artist/song-one", duration: 180, extractor_key: "Soundcloud" },
+            { title: "Artist Song Two", artist: "Artist", permalink_url: "https://soundcloud.com/artist/song-two", duration: 180, extractor_key: "Soundcloud" }
+        ]
+    });
+    ytdlp.virta = async url => {
+        yritykset.push(url);
+        if (url.endsWith("/song-one")) {
+            throw ytdlp.luoYtdlpVirhe({
+                vaihe: "stream-process-exit",
+                exitCode: 1,
+                stderr: "ERROR: [soundcloud] track-id: This video is DRM protected"
+            });
+        }
+        return { stream: new PassThrough(), tavuja: () => 100, virhe: () => "", sulje: () => {} };
+    };
+
+    try {
+        const i = y.interaktio({
+            valinnat: { haku: "Artist Song", lahde: "soundcloud", valinta: 0 }
+        });
+        await y.komento("soita").execute(i);
+        await aika(15);
+
+        assert.deepEqual(yritykset, [
+            "https://soundcloud.com/artist/song-one",
+            "https://soundcloud.com/artist/song-two"
+        ]);
+        const soitin = y.soitinModuuli.haeSoitin("g1");
+        assert.equal(soitin.nyt.url, yritykset[1]);
+        assert.equal(soitin.jono.length, 0, "vaihtoehto ei lisäänny jonoon uutena kappaleena");
+        assert.equal(i.deferCalls, 1);
+    } finally {
+        ytdlp.tiedot = alkuperainenTiedot;
+        ytdlp.virta = alkuperainenVirta;
+        y.siivoa();
+    }
 });
 
 komentoTesti("toisella kanavalla oleva käyttäjä ei voi ohjata eikä kaapata soittoa", async () => {
