@@ -114,30 +114,70 @@ async function haeTekstiLahteesta(teksti, { pyytaja, lahde, asetukset, hakuId })
     const alku = Date.now();
     const etuliite = lahde === "soundcloud" ? "scsearch" : "ytsearch";
     const tapahtuma = `${etuliite}${HAKU_TULOSTEN_MAARA}:${teksti.replace(/\s+/g, " ")}`;
+    let jsonPalautui = false;
+    let jsonRakenne = null;
+    let entriesMaara = null;
+    let metadataTietueita = 0;
+    let kappaleiksiMuunnettu = 0;
+    let muunnoksessaHylatty = 0;
+    let suodatustulos = null;
+    let exitCode = null;
 
     lokitaHaku(hakuId, "lahde-alkoi", { lahde });
 
     try {
         const data = await ytdlp.tiedot(tapahtuma, { lista: false });
-        const kaikki = tietueet(data)
+        jsonPalautui = true;
+        exitCode = 0;
+        jsonRakenne = Array.isArray(data?.entries) ? "entries" : "yksittainen-tietue";
+        entriesMaara = Array.isArray(data?.entries) ? data.entries.length : 0;
+        const tietueetListassa = tietueet(data);
+        metadataTietueita = tietueetListassa.length;
+        const kaikki = tietueetListassa
             .map(e => ytdlpKappale(e, { pyytaja, hakulahde: lahde }))
             .filter(Boolean);
-        const { kelvolliset, hylatty } = suodata(kaikki, asetukset);
+        kappaleiksiMuunnettu = kaikki.length;
+        muunnoksessaHylatty = metadataTietueita - kappaleiksiMuunnettu;
+        suodatustulos = suodata(kaikki, asetukset);
+        const { kelvolliset, hylatty, hylkaysSyyt } = suodatustulos;
+        const kappaleet = jarjestaOsumat(teksti, kelvolliset).slice(0, HAKU_TULOSTEN_MAARA);
 
         lokitaHaku(hakuId, "lahde-valmis", {
             lahde,
-            tuloksia: kelvolliset.length,
+            exitCode,
+            jsonPalautui,
+            jsonRakenne,
+            entriesMaara,
+            metadataTietueita,
+            kappaleiksiMuunnettu,
+            muunnoksessaHylatty,
+            suodatuksenJalkeen: kelvolliset.length,
             hylatty,
+            suodatusHylatty: hylatty,
+            hylkaysSyyt,
+            tuloksia: kelvolliset.length,
+            palautettujaTuloksia: kappaleet.length,
+            lopullinenTulos: kappaleet.length ? "tuloksia" : "ei-tuloksia",
             kestoMs: Date.now() - alku
         });
 
-        return { kappaleet: jarjestaOsumat(teksti, kelvolliset).slice(0, HAKU_TULOSTEN_MAARA), hylatty };
+        return { kappaleet, hylatty };
     } catch (err) {
         lokitaHaku(hakuId, "lahde-virhe", {
             syote: "hakusana",
             hakutapa: "hakusana",
             lahde: lahde === "soundcloud" ? "SoundCloud" : "YouTube",
             ...ytdlpDiagnostiikka(err),
+            exitCode: exitCode ?? (Number.isInteger(err?.exitCode) ? err.exitCode : null),
+            jsonPalautui,
+            jsonRakenne,
+            entriesMaara,
+            metadataTietueita,
+            kappaleiksiMuunnettu,
+            muunnoksessaHylatty,
+            suodatusHylatty: suodatustulos?.hylatty ?? 0,
+            hylkaysSyyt: suodatustulos?.hylkaysSyyt ?? null,
+            lopullinenTulos: "virhe",
             kestoMs: Date.now() - alku
         });
         throw err;
@@ -256,14 +296,20 @@ function ytdlpKappale(e, { pyytaja, hakulahde }) {
 /** Poistaa liian pitkät ja suorat lähetykset (ne soisivat loputtomiin). */
 function suodata(kappaleet, asetukset) {
     let hylatty = 0;
+    const hylkaysSyyt = { suoraLahetys: 0, liianPitka: 0, muu: 0 };
 
     const kelvolliset = kappaleet.filter(k => {
         const kelpaa = !k.suora && (k.kesto === null || k.kesto <= asetukset.maxKestoS);
-        if (!kelpaa) hylatty++;
+        if (!kelpaa) {
+            hylatty++;
+            if (k.suora) hylkaysSyyt.suoraLahetys++;
+            else if (typeof k.kesto === "number" && k.kesto > asetukset.maxKestoS) hylkaysSyyt.liianPitka++;
+            else hylkaysSyyt.muu++;
+        }
         return kelpaa;
     });
 
-    return { kelvolliset, hylatty };
+    return { kelvolliset, hylatty, hylkaysSyyt };
 }
 
 // ---------------------------------------------------------------------------
@@ -451,7 +497,11 @@ async function haeKappaleet(syote, { pyytaja, hakulahde, asetukset }) {
         try {
             const tulos = await haeTekstiLahteesta(teksti, { pyytaja, lahde, asetukset, hakuId });
             if (tulos.kappaleet.length) {
-                lokitaHaku(hakuId, "haku-valmis", { lahde, tuloksia: tulos.kappaleet.length });
+                lokitaHaku(hakuId, "haku-valmis", {
+                    lahde,
+                    tuloksia: tulos.kappaleet.length,
+                    lopullinenTulos: "tuloksia"
+                });
                 return {
                     kappaleet: tulos.kappaleet,
                     hylatty: tulos.hylatty,
@@ -474,7 +524,8 @@ async function haeKappaleet(syote, { pyytaja, hakulahde, asetukset }) {
 
     lokitaHaku(hakuId, "haku-epäonnistui", {
         lahteet: haetytLahteet,
-        tulokset: epaonnistumiset.map(t => t.tulos ?? t.virhe)
+        tulokset: epaonnistumiset.map(t => t.tulos ?? t.virhe),
+        lopullinenTulos: epaonnistumiset.every(t => t.tulos === "ei-tuloksia") ? "ei-tuloksia" : "virhe"
     });
     throw hakuVirhe(epaonnistumiset, haetytLahteet);
 }

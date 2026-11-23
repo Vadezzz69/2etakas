@@ -390,9 +390,10 @@ testi("ytdlpKappale muuntaa yt-dlp:n vastauksen ja suodatus hylkää suorat ja l
 
     const suora = lahteet.ytdlpKappale({ title: "Live", webpage_url: "https://www.youtube.com/watch?v=l", is_live: true }, { hakulahde: "youtube" });
     const pitka = { ...kap, kesto: 99999 };
-    const { kelvolliset, hylatty } = lahteet.suodata([kap, suora, pitka], ASETUKSET);
+    const { kelvolliset, hylatty, hylkaysSyyt } = lahteet.suodata([kap, suora, pitka], ASETUKSET);
     assert.equal(kelvolliset.length, 1);
     assert.equal(hylatty, 2);
+    assert.deepEqual(hylkaysSyyt, { suoraLahetys: 1, liianPitka: 1, muu: 0 });
 });
 
 testi("haeKappaleet käsittelee yhden YouTube- ja SoundCloud-kappaleen metadataolion", async () => {
@@ -505,6 +506,67 @@ testi("YouTube-haku yrittää SoundCloudia teknisen virheen tai tyhjän tuloksen
         assert.equal(tulos.kappaleet[0].artisti, "SoundCloud artist");
     } finally {
         ytdlp.tiedot = alkuperainen;
+    }
+});
+
+testi("SoundCloud-varahaun lokit laskevat JSONin, muunnokset, suodatukset ja lopputuloksen turvallisesti", async () => {
+    const alkuperainenTiedot = ytdlp.tiedot;
+    const alkuperainenInfo = console.info;
+    const lokit = [];
+    const hakuteksti = "ei-saa-nakya-lokeissa";
+    const soundcloudUrl = "https://soundcloud.com/private-artist/private-track";
+
+    ytdlp.tiedot = async kohde => {
+        if (kohde.startsWith("ytsearch5:")) return { entries: [] };
+        assert.equal(kohde, `scsearch5:${hakuteksti}`);
+        return {
+            entries: [
+                { title: "Kelvollinen", permalink_url: soundcloudUrl, duration: 120, extractor_key: "Soundcloud" },
+                { title: "Puuttuva URL" },
+                { title: "Liian pitkä", permalink_url: `${soundcloudUrl}-long`, duration: 601, extractor_key: "Soundcloud" },
+                { title: "Suora lähetys", permalink_url: `${soundcloudUrl}-live`, duration: 120, is_live: true, extractor_key: "Soundcloud" }
+            ]
+        };
+    };
+    console.info = viesti => lokit.push(String(viesti));
+
+    try {
+        const tulos = await lahteet.haeKappaleet(hakuteksti, {
+            pyytaja: "u",
+            hakulahde: "youtube",
+            asetukset: ASETUKSET
+        });
+        assert.equal(tulos.lahde, "Soundcloud");
+        assert.equal(tulos.kappaleet.length, 1);
+
+        const rivit = lokit.map(teksti => JSON.parse(teksti.slice("[musiikki-haku] ".length)));
+        const varahaku = rivit.find(rivi => rivi.vaihe === "varahaku-alkoi");
+        const soundcloudTulos = rivit.find(rivi => rivi.vaihe === "lahde-valmis" && rivi.lahde === "soundcloud");
+        const lopputulos = rivit.find(rivi => rivi.vaihe === "haku-valmis");
+
+        assert.equal(varahaku.lahde, "soundcloud");
+        assert.equal(soundcloudTulos.exitCode, 0);
+        assert.equal(soundcloudTulos.jsonPalautui, true);
+        assert.equal(soundcloudTulos.jsonRakenne, "entries");
+        assert.equal(soundcloudTulos.entriesMaara, 4);
+        assert.equal(soundcloudTulos.metadataTietueita, 4);
+        assert.equal(soundcloudTulos.kappaleiksiMuunnettu, 3);
+        assert.equal(soundcloudTulos.muunnoksessaHylatty, 1);
+        assert.equal(soundcloudTulos.suodatuksenJalkeen, 1);
+        assert.equal(soundcloudTulos.suodatusHylatty, 2);
+        assert.deepEqual(soundcloudTulos.hylkaysSyyt, { suoraLahetys: 1, liianPitka: 1, muu: 0 });
+        assert.equal(soundcloudTulos.lopullinenTulos, "tuloksia");
+        assert.equal(lopputulos.lopullinenTulos, "tuloksia");
+        assert.equal(lopputulos.tuloksia, 1);
+
+        const kaikkiLokit = lokit.join("\n");
+        assert.equal(kaikkiLokit.includes(hakuteksti), false);
+        assert.equal(kaikkiLokit.includes(soundcloudUrl), false);
+        assert.equal(kaikkiLokit.includes("Kelvollinen"), false);
+        assert.equal(kaikkiLokit.includes("Puuttuva URL"), false);
+    } finally {
+        ytdlp.tiedot = alkuperainenTiedot;
+        console.info = alkuperainenInfo;
     }
 });
 
