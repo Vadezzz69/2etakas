@@ -7,6 +7,22 @@ const { lisattyEmbed } = require("../../utils/musiikki/muotoilu");
 
 const VALINTA_AIKARAJA_MS = 60_000;
 
+function kirjaaInteractionAika(interaction, vaihe, tiedot = {}) {
+    const nyt = Date.now();
+    const luotuMs = interaction?.createdTimestamp;
+    console.info(`[interaction-timing] ${JSON.stringify({
+        vaihe,
+        komento: "soita",
+        interactionId: interaction?.id ?? null,
+        pid: process.pid,
+        aika: new Date(nyt).toISOString(),
+        aikaMs: nyt,
+        luotuMs: Number.isFinite(luotuMs) ? luotuMs : null,
+        viiveLuonnistaMs: Number.isFinite(luotuMs) ? nyt - luotuMs : null,
+        ...tiedot
+    })}`);
+}
+
 function rajaa(teksti, max) {
     const siisti = String(teksti ?? "").replace(/\s+/g, " ").trim();
     return siisti.length > max ? `${siisti.slice(0, max - 1)}…` : siisti;
@@ -107,8 +123,22 @@ module.exports = {
 
 async execute(interaction) {
 
-    // Kuitataan komento heti, ennen mahdollisia API-pyyntöjä.
-    await interaction.deferReply();
+    kirjaaInteractionAika(interaction, "command-execute-start");
+    const deferAlkoiMs = Date.now();
+    kirjaaInteractionAika(interaction, "deferReply-start");
+    try {
+        await interaction.deferReply();
+        kirjaaInteractionAika(interaction, "deferReply-success", {
+            deferKestoMs: Date.now() - deferAlkoiMs,
+            kuittausViiveMs: Date.now() - interaction.createdTimestamp
+        });
+    } catch (err) {
+        kirjaaInteractionAika(interaction, "deferReply-failure", {
+            deferKestoMs: Date.now() - deferAlkoiMs,
+            discordCode: err?.code ?? null
+        });
+        throw err;
+    }
 
     const valmis = await valmisteleSoitto(interaction);
     if (!valmis) return;

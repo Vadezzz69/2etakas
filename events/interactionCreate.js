@@ -3,6 +3,22 @@ const { kirjaaKomento } = require("../utils/tilastot");
 const { satunnainen } = require("../utils/satunnainen");
 const { VIRHEVIESTIT, VANHAT_KOMENNOT } = require("../utils/comedy/data/viestit");
 
+function kirjaaInteractionAika(interaction, vaihe, tiedot = {}) {
+    const nyt = Date.now();
+    const luotuMs = interaction?.createdTimestamp;
+    console.info(`[interaction-timing] ${JSON.stringify({
+        vaihe,
+        komento: "soita",
+        interactionId: interaction?.id ?? null,
+        pid: process.pid,
+        aika: new Date(nyt).toISOString(),
+        aikaMs: nyt,
+        luotuMs: Number.isFinite(luotuMs) ? luotuMs : null,
+        viiveLuonnistaMs: Number.isFinite(luotuMs) ? nyt - luotuMs : null,
+        ...tiedot
+    })}`);
+}
+
 /**
  * Kertoo käyttäjälle virheestä niin, ettei virheilmoituksen lähetys itse voi
  * heittää uutta käsittelemätöntä virhettä (esim. jos vuorovaikutus on jo
@@ -22,13 +38,16 @@ async function ilmoitaVirhe(interaction, teksti) {
             console.warn("⚠️ Interaction vanheni ennen virheilmoituksen lähettämistä.");
             return;
         }
-        console.error("❌ Virheilmoituksen lähetys epäonnistui:", err?.message ?? err);
+        console.error("❌ Virheilmoituksen lähetys epäonnistui:", { name: err?.name, code: err?.code });
     }
 }
 
 module.exports = {
     name: Events.InteractionCreate,
     async execute(interaction, client) {
+        const saapuiMs = Date.now();
+        const onSoita = interaction.commandName === "soita";
+        if (onSoita) kirjaaInteractionAika(interaction, "interactionCreate-start", { saapuiMs });
 
         if (!interaction.isChatInputCommand()) return;
 
@@ -42,11 +61,16 @@ module.exports = {
 
         try {
 
+            if (onSoita) {
+                kirjaaInteractionAika(interaction, "command-dispatch-start", {
+                    viiveSaapumisestaMs: Date.now() - saapuiMs
+                });
+            }
             await command.execute(interaction, client);
 
         } catch (err) {
 
-            console.error(`❌ Virhe komennossa /${interaction.commandName}:`, err);
+            console.error(`❌ Virhe komennossa /${interaction.commandName}:`, { name: err?.name, code: err?.code });
             if (Number(err?.code) === 10062) {
                 console.warn("⚠️ Interaction vanheni ennen komennon valmistumista; virhevastausta ei yritetty uudelleen.");
                 return;

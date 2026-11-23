@@ -3,6 +3,21 @@ const path = require("path");
 
 const EVENTIT_KANSIO = path.join(__dirname, "..", "events");
 
+function kirjaaInteractionAika(interaction) {
+    const nyt = Date.now();
+    const luotuMs = interaction?.createdTimestamp;
+    console.info(`[interaction-timing] ${JSON.stringify({
+        vaihe: "event-handler-received",
+        komento: "soita",
+        interactionId: interaction?.id ?? null,
+        pid: process.pid,
+        aika: new Date(nyt).toISOString(),
+        aikaMs: nyt,
+        luotuMs: Number.isFinite(luotuMs) ? luotuMs : null,
+        viiveLuonnistaMs: Number.isFinite(luotuMs) ? nyt - luotuMs : null
+    })}`);
+}
+
 module.exports = (client) => {
 
     const eventFiles = fs
@@ -23,10 +38,17 @@ module.exports = (client) => {
         // Virhe yhdessä event-käsittelijässä ei saa kaataa koko prosessia
         // käsittelemättömänä Promise-hylkäyksenä.
         const suorita = async (...args) => {
+            if (event.name === "interactionCreate" && args[0]?.commandName === "soita") {
+                kirjaaInteractionAika(args[0]);
+            }
+
             try {
                 await event.execute(...args, client);
             } catch (err) {
-                console.error(`❌ Virhe eventissä ${event.name}:`, err);
+                const virhe = event.name === "interactionCreate"
+                    ? { name: err?.name, code: err?.code }
+                    : err;
+                console.error(`❌ Virhe eventissä ${event.name}:`, virhe);
             }
         };
 

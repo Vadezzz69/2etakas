@@ -704,7 +704,12 @@ komentoTesti("vanhentunut interaction ei käynnistä uutta virhevastausta", asyn
         deferred: false,
         replied: false,
         isChatInputCommand: () => true,
-        deferReply: async () => { throw Object.assign(new Error("Unknown interaction"), { code: 10062 }); },
+        deferReply: async () => {
+            throw Object.assign(new Error("Unknown interaction"), {
+                code: 10062,
+                url: "https://discord.test/interactions/id/interaction-token-secret/callback"
+            });
+        },
         reply: async () => { vastausyrityksia++; },
         editReply: async () => { vastausyrityksia++; },
         followUp: async () => { vastausyrityksia++; }
@@ -716,6 +721,7 @@ komentoTesti("vanhentunut interaction ei käynnistä uutta virhevastausta", asyn
         await tapahtuma.execute(i, { commands: new Map([["soita", { execute: async interaction => interaction.deferReply() }]]) });
         assert.equal(vastausyrityksia, 0);
         assert.equal(virheet.length, 1, "alkuperäinen interaction-virhe kirjataan");
+        assert.equal(JSON.stringify(virheet).includes("interaction-token-secret"), false, "interaction-token ei päädy lokiin");
         assert.equal(varoitukset.length, 1, "uudelleenyrityksen ohitus kirjataan");
     } finally {
         console.error = alkuperainenVirhe;
