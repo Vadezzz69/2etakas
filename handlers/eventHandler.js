@@ -4,6 +4,8 @@ const path = require("path");
 const EVENTIT_KANSIO = path.join(__dirname, "..", "events");
 
 function kirjaaInteractionAika(interaction) {
+    if (process.env.SOITA_REST_DIAGNOSTIIKKA === "1") return;
+
     const nyt = Date.now();
     const luotuMs = interaction?.createdTimestamp;
     const rivi = {

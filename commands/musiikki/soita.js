@@ -6,8 +6,12 @@ const { valmisteleSoitto, haeTaiLuoSoitin } = require("../../utils/musiikki/ohja
 const { lisattyEmbed } = require("../../utils/musiikki/muotoilu");
 
 const VALINTA_AIKARAJA_MS = 60_000;
+const REST_DIAGNOSTIIKKA_ENV = "SOITA_REST_DIAGNOSTIIKKA";
+let restDiagnostiikkaKaytetty = false;
 
 function kirjaaInteractionAika(interaction, vaihe, tiedot = {}) {
+    if (process.env[REST_DIAGNOSTIIKKA_ENV] === "1") return;
+
     const nyt = Date.now();
     const luotuMs = interaction?.createdTimestamp;
     const rivi = {
@@ -22,6 +26,82 @@ function kirjaaInteractionAika(interaction, vaihe, tiedot = {}) {
         ...tiedot
     };
     setImmediate(() => console.info(`[interaction-timing] ${JSON.stringify(rivi)}`));
+}
+
+function aloitaRestDiagnostiikka(interaction) {
+    if (process.env[REST_DIAGNOSTIIKKA_ENV] !== "1" || restDiagnostiikkaKaytetty) return null;
+
+    const rest = interaction.client.rest;
+    const alkuperainenMakeRequest = rest.options.makeRequest;
+    if (typeof alkuperainenMakeRequest !== "function") return null;
+
+    restDiagnostiikkaKaytetty = true;
+    const odotettuId = interaction.id;
+    const odotettuToken = interaction.token;
+    const pyynnot = [];
+
+    const tarkkailevaMakeRequest = async function (url, init) {
+        let tiedot;
+        try {
+            const osat = new URL(url).pathname.split("/").filter(Boolean);
+            if (osat.includes("interactions") && osat.at(-1) === "callback") {
+                const loppuosa = osat.slice(-4);
+                tiedot = {
+                    methodMatchesPost: init?.method === "POST",
+                    callbackRouteMatches: loppuosa.length === 4 &&
+                        loppuosa[0] === "interactions" &&
+                        Boolean(loppuosa[1]) &&
+                        Boolean(loppuosa[2]) &&
+                        loppuosa[3] === "callback",
+                    apiVersionIsV10: osat.at(-5) === "v10",
+                    interactionIdMatches: loppuosa[1] === odotettuId,
+                    interactionTokenMatches: loppuosa[2] === odotettuToken,
+                    httpStatus: null
+                };
+                pyynnot.push(tiedot);
+            }
+        } catch {
+            tiedot = undefined;
+        }
+
+        const response = await alkuperainenMakeRequest.call(this, url, init);
+        if (tiedot) {
+            tiedot.httpStatus = Number.isInteger(response?.status) ? response.status : null;
+        }
+        return response;
+    };
+
+    rest.options.makeRequest = tarkkailevaMakeRequest;
+
+    return {
+        kirjaa(virhe) {
+            if (pyynnot.length > 1) return;
+
+            const pyynto = pyynnot[0] ?? {};
+            console.info("[soita-rest-diagnostic] " + JSON.stringify({
+                methodMatchesPost: pyynto.methodMatchesPost === true,
+                callbackRouteMatches: pyynto.callbackRouteMatches === true,
+                apiVersionIsV10: pyynto.apiVersionIsV10 === true,
+                interactionIdMatches: pyynto.interactionIdMatches === true,
+                interactionTokenMatches: pyynto.interactionTokenMatches === true,
+                pid: process.pid,
+                httpStatus: Number.isInteger(virhe?.status)
+                    ? virhe.status
+                    : Number.isInteger(pyynto.httpStatus)
+                        ? pyynto.httpStatus
+                        : null,
+                discordCode: Number.isInteger(virhe?.code) ? virhe.code : null
+            }));
+        },
+        palauta() {
+            if (rest.options.makeRequest === tarkkailevaMakeRequest) {
+                rest.options.makeRequest = alkuperainenMakeRequest;
+            }
+            if (process.env[REST_DIAGNOSTIIKKA_ENV] === "1") {
+                process.env[REST_DIAGNOSTIIKKA_ENV] = "used";
+            }
+        }
+    };
 }
 
 function rajaa(teksti, max) {
@@ -126,21 +206,27 @@ async execute(interaction) {
 
     const executeAlkoiMs = Date.now();
     const deferAlkoiMs = Date.now();
+    const restDiagnostiikka = aloitaRestDiagnostiikka(interaction);
     let kuittaus;
     try {
         kuittaus = interaction.deferReply();
     } catch (err) {
-        console.warn("[deferReply-error] " + JSON.stringify({
-            stage: "call",
-            httpStatus: Number.isInteger(err?.status) ? err.status : null,
-            discordCode: Number.isInteger(err?.code) ? err.code : null
-        }));
-        kirjaaInteractionAika(interaction, "deferReply-failure", {
-            executeAlkoiMs,
-            deferAlkoiMs,
-            deferKestoMs: Date.now() - deferAlkoiMs,
-            discordCode: err?.code ?? null
-        });
+        try {
+            restDiagnostiikka?.kirjaa(err);
+            console.warn("[deferReply-error] " + JSON.stringify({
+                stage: "call",
+                httpStatus: Number.isInteger(err?.status) ? err.status : null,
+                discordCode: Number.isInteger(err?.code) ? err.code : null
+            }));
+            kirjaaInteractionAika(interaction, "deferReply-failure", {
+                executeAlkoiMs,
+                deferAlkoiMs,
+                deferKestoMs: Date.now() - deferAlkoiMs,
+                discordCode: err?.code ?? null
+            });
+        } finally {
+            restDiagnostiikka?.palauta();
+        }
         throw err;
     }
 
@@ -148,6 +234,7 @@ async execute(interaction) {
     kirjaaInteractionAika(interaction, "deferReply-start", { deferAlkoiMs });
     try {
         await kuittaus;
+        restDiagnostiikka?.kirjaa();
         kirjaaInteractionAika(interaction, "deferReply-success", {
             executeAlkoiMs,
             deferAlkoiMs,
@@ -155,6 +242,7 @@ async execute(interaction) {
             kuittausViiveMs: Date.now() - interaction.createdTimestamp
         });
     } catch (err) {
+        restDiagnostiikka?.kirjaa(err);
         console.warn("[deferReply-error] " + JSON.stringify({
             stage: "await",
             httpStatus: Number.isInteger(err?.status) ? err.status : null,
@@ -165,6 +253,8 @@ async execute(interaction) {
             discordCode: err?.code ?? null
         });
         throw err;
+    } finally {
+        restDiagnostiikka?.palauta();
     }
 
     const valmis = await valmisteleSoitto(interaction);

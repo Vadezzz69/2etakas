@@ -4,6 +4,8 @@ const { satunnainen } = require("../utils/satunnainen");
 const { VIRHEVIESTIT, VANHAT_KOMENNOT } = require("../utils/comedy/data/viestit");
 
 function kirjaaInteractionAika(interaction, vaihe, tiedot = {}) {
+    if (process.env.SOITA_REST_DIAGNOSTIIKKA === "1") return;
+
     const nyt = Date.now();
     const luotuMs = interaction?.createdTimestamp;
     const rivi = {
@@ -52,7 +54,7 @@ module.exports = {
 
         if (!interaction.isChatInputCommand()) return;
 
-        if (onSoita) {
+        if (onSoita && process.env.SOITA_REST_DIAGNOSTIIKKA !== "1") {
             const clientApplicationId = client.application?.id;
             console.info("[soita-identity] " + JSON.stringify({
                 clientApplicationReady: Boolean(clientApplicationId),
