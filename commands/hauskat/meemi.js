@@ -19,7 +19,9 @@ module.exports = {
 
     async execute(interaction) {
 
+        console.info("[meemi-flow] defer-start", { interactionId: interaction.id, pid: process.pid });
         await interaction.deferReply();
+        console.info("[meemi-flow] defer-ok", { interactionId: interaction.id, pid: process.pid });
 
         try {
 
@@ -33,6 +35,7 @@ module.exports = {
             }
 
             if (!data || data.nsfw) {
+                console.info("[meemi-flow] no-meme-edit-start", { interactionId: interaction.id, pid: process.pid });
                 return interaction.editReply(satunnainen(MEEMI_EI_LOYTYNYT));
             }
 
@@ -44,7 +47,9 @@ module.exports = {
 
             if (data.postLink) embed.setURL(data.postLink);
 
+            console.info("[meemi-flow] edit-start", { interactionId: interaction.id, pid: process.pid });
             await interaction.editReply({ embeds: [embed] });
+            console.info("[meemi-flow] edit-ok", { interactionId: interaction.id, pid: process.pid });
 
         } catch (err) {
 
