@@ -2,6 +2,7 @@ const path = require("node:path");
 require("dotenv").config({ quiet: true });
 
 const ytdlp = require("./utils/musiikki/ytdlp");
+const hakuteksti = process.argv.slice(2).join(" ").trim() || "lofi hip hop";
 const tulosta = console.log.bind(console);
 const alkuperainenVirheTuloste = console.error;
 
@@ -44,7 +45,7 @@ async function main() {
 
             try {
                 if (!bin) throw new Error("YTDLP_PUUTTUU");
-                await ytdlp.tiedot(`${etuliite}5:lofi hip hop`, { lista: false });
+                await ytdlp.tiedot(`${etuliite}5:${hakuteksti}`, { lista: false });
                 exitCode = 0;
             } catch (err) {
                 exitCode = Number.isInteger(err?.exitCode) ? err.exitCode : null;
