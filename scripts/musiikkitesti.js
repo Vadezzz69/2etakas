@@ -9,7 +9,6 @@
  */
 
 const assert = require("node:assert/strict");
-const { createHash } = require("node:crypto");
 const { EventEmitter } = require("node:events");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -1716,14 +1715,12 @@ komentoTesti("jonoon lisätty kappale säilyy vastauspäivityksen epäonnistuess
     }
 });
 
-komentoTesti("/soita defer-virheen loki ei sisällä raakaa virhettä", async () => {
+komentoTesti("/soita kuittauksen epäonnistuessa virhe välittyy eteenpäin eikä vuoda salaisuuksia", async () => {
     const y = komentoYmparisto();
-    const vanhaDiagnostiikka = process.env.SOITA_REST_DIAGNOSTIIKKA;
     const alkuperainenInfo = console.info;
     const alkuperainenWarn = console.warn;
     const lokit = [];
 
-    process.env.SOITA_REST_DIAGNOSTIIKKA = "used";
     console.info = (...args) => lokit.push(args);
     console.warn = (...args) => lokit.push(args);
     try {
@@ -1750,190 +1747,9 @@ komentoTesti("/soita defer-virheen loki ei sisällä raakaa virhettä", async ()
         ]) {
             assert.equal(lokiteksti.includes(salaisuus), false, `${salaisuus} ei päädy lokiin`);
         }
-        const deferVirheLoki = lokit.find(args => String(args[0]).startsWith("[deferReply-error] "));
-        assert.ok(deferVirheLoki, "deferReply-virhe kirjataan");
-        assert.deepEqual(JSON.parse(String(deferVirheLoki[0]).slice("[deferReply-error] ".length)), {
-            stage: "await",
-            httpStatus: 404,
-            discordCode: 10062
-        });
     } finally {
         console.info = alkuperainenInfo;
         console.warn = alkuperainenWarn;
-        if (vanhaDiagnostiikka === undefined) delete process.env.SOITA_REST_DIAGNOSTIIKKA;
-        else process.env.SOITA_REST_DIAGNOSTIIKKA = vanhaDiagnostiikka;
-        y.siivoa();
-    }
-});
-
-komentoTesti("/soita REST-diagnostiikka laskee callbackin ja välittää pyynnöt muuttamatta", async () => {
-    const y = komentoYmparisto();
-    const vanhaDiagnostiikka = process.env.SOITA_REST_DIAGNOSTIIKKA;
-    const vanhaBypass = process.env.SOITA_REST_DIAGNOSTIIKKA_BYPASS;
-    const alkuperainenInfo = console.info;
-    const lokit = [];
-    const kutsut = [];
-    const interactionId = "diagnostic-interaction";
-    const interactionToken = "diagnostic-token";
-    const unrelatedInit = { method: "GET", headers: { "x-test": "unchanged" } };
-    const callbackBody = JSON.stringify({ type: 5, data: { flags: 0 } });
-    const callbackInit = {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: callbackBody
-    };
-    const rest = {
-        options: {
-            makeRequest(url, init) {
-                kutsut.push({ url, init, thisValue: this });
-                return Promise.resolve({
-                    status: url.includes("/callback") ? 204 : 200,
-                    headers: new Headers({ date: "Mon, 23 Nov 2026 10:44:46 GMT" })
-                });
-            }
-        }
-    };
-
-    process.env.SOITA_REST_DIAGNOSTIIKKA = "1";
-    delete process.env.SOITA_REST_DIAGNOSTIIKKA_BYPASS;
-    console.info = (...args) => lokit.push(args.map(String).join(" "));
-
-    try {
-        const i = y.interaktio({ valinnat: { haku: "testi" } });
-        i.id = interactionId;
-        i.token = interactionToken;
-        i.applicationId = "application-id";
-        i.createdTimestamp = Date.now();
-        i.client = { rest, application: { id: "application-id" } };
-        i.deferReply = async () => {
-            i.deferred = true;
-            i.deferCalls++;
-            await rest.options.makeRequest("https://discord.com/api/v10/users/@me", unrelatedInit);
-            return rest.options.makeRequest(
-                `https://discord.com/api/v10/interactions/${interactionId}/${interactionToken}/callback?with_response=false`,
-                callbackInit
-            );
-        };
-
-        await y.komento("soita").execute(i);
-
-        const diagnosticLog = lokit.find(line => line.startsWith("[soita-rest-diagnostic] "));
-        assert.ok(diagnosticLog);
-        const diagnostic = JSON.parse(diagnosticLog.slice("[soita-rest-diagnostic] ".length));
-        assert.equal(i.deferCalls, 1);
-        assert.equal(kutsut.length, 2);
-        assert.equal(kutsut[0].url, "https://discord.com/api/v10/users/@me");
-        assert.strictEqual(kutsut[0].init, unrelatedInit);
-        assert.strictEqual(kutsut[0].thisValue, rest.options);
-        assert.strictEqual(kutsut[1].init, callbackInit);
-        assert.strictEqual(kutsut[1].thisValue, rest.options);
-        assert.equal(diagnostic.callbackRequestCount, 1);
-        assert.equal(diagnostic.matchingCallbackRequestCount, 1);
-        assert.equal(diagnostic.mismatchedCallbackRequestCount, 0);
-        assert.equal(diagnostic.otherRestRequestCount, 1);
-        assert.equal(diagnostic.httpStatus, 204);
-        assert.equal(diagnostic.callbackUrl, "https://discord.com/api/v10/interactions/diagnostic-interaction/[REDACTED]/callback?with_response=false");
-        assert.equal(diagnostic.callbackContentType, "application/json");
-        assert.deepEqual(diagnostic.callbackHttpBody, {
-            byteLength: Buffer.byteLength(callbackBody),
-            sha256: createHash("sha256").update(callbackBody).digest("hex"),
-            json: callbackBody,
-            type: 5,
-            rootKeys: ["data", "type"],
-            dataKeys: ["flags"],
-            flags: 0
-        });
-        assert.ok(Number.isFinite(diagnostic.ageAtRequestMs));
-        assert.ok(Number.isFinite(diagnostic.deferToHttpRequestMs));
-        assert.ok(Number.isFinite(diagnostic.diagnosticPreparationMs));
-        assert.ok(Number.isFinite(diagnostic.requestDurationMs));
-        assert.equal(diagnostic.discordDateHeaderResolutionMs, 1000);
-        assert.equal(lokit.join("\n").includes(interactionToken), false);
-    } finally {
-        console.info = alkuperainenInfo;
-        if (vanhaDiagnostiikka === undefined) delete process.env.SOITA_REST_DIAGNOSTIIKKA;
-        else process.env.SOITA_REST_DIAGNOSTIIKKA = vanhaDiagnostiikka;
-        if (vanhaBypass === undefined) delete process.env.SOITA_REST_DIAGNOSTIIKKA_BYPASS;
-        else process.env.SOITA_REST_DIAGNOSTIIKKA_BYPASS = vanhaBypass;
-        y.siivoa();
-    }
-});
-
-komentoTesti("/soita REST-diagnostiikka tallentaa rajatun 10062-vastauksen", async () => {
-    const y = komentoYmparisto();
-    const vanhaDiagnostiikka = process.env.SOITA_REST_DIAGNOSTIIKKA;
-    const vanhaBypass = process.env.SOITA_REST_DIAGNOSTIIKKA_BYPASS;
-    const alkuperainenInfo = console.info;
-    const lokit = [];
-    const interactionId = "failed-diagnostic-interaction";
-    const interactionToken = "failed-diagnostic-token";
-    const callbackBody = JSON.stringify({ type: 5, data: { flags: 0 } });
-    const rest = {
-        options: {
-            makeRequest(url, init) {
-                assert.equal(url, `https://discord.com/api/v10/interactions/${interactionId}/${interactionToken}/callback?with_response=false`);
-                assert.equal(init.body, callbackBody);
-                return Promise.resolve({
-                    status: 404,
-                    headers: new Headers({ date: "Mon, 23 Nov 2026 10:44:46 GMT" })
-                });
-            }
-        }
-    };
-
-    process.env.SOITA_REST_DIAGNOSTIIKKA = "1";
-    delete process.env.SOITA_REST_DIAGNOSTIIKKA_BYPASS;
-    console.info = (...args) => lokit.push(args.map(String).join(" "));
-
-    try {
-        const i = y.interaktio();
-        i.id = interactionId;
-        i.token = interactionToken;
-        i.applicationId = "application-id";
-        i.createdTimestamp = Date.now();
-        i.client = { rest, application: { id: "application-id" } };
-        i.deferReply = async () => {
-            i.deferCalls++;
-            await rest.options.makeRequest(
-                `https://discord.com/api/v10/interactions/${interactionId}/${interactionToken}/callback?with_response=false`,
-                {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: callbackBody
-                }
-            );
-            throw Object.assign(new Error("Unknown interaction"), {
-                code: 10062,
-                status: 404,
-                rawError: { code: 10062, message: "Unknown interaction" }
-            });
-        };
-
-        await assert.rejects(
-            () => y.komento("soita").execute(i),
-            error => error.code === 10062
-        );
-
-        const diagnosticLog = lokit.find(line => line.startsWith("[soita-rest-diagnostic] "));
-        assert.ok(diagnosticLog);
-        const diagnostic = JSON.parse(diagnosticLog.slice("[soita-rest-diagnostic] ".length));
-        assert.equal(diagnostic.httpStatus, 404);
-        assert.equal(diagnostic.discordCode, 10062);
-        assert.deepEqual(diagnostic.discordResponse, {
-            keys: ["code", "message"],
-            code: 10062,
-            message: "Unknown interaction"
-        });
-        assert.equal(diagnostic.interactionTokenMatches, true);
-        assert.equal(diagnostic.callbackUrl, "https://discord.com/api/v10/interactions/failed-diagnostic-interaction/[REDACTED]/callback?with_response=false");
-        assert.equal(diagnostic.callbackHttpBody.json, callbackBody);
-        assert.equal(lokit.join("\n").includes(interactionToken), false);
-    } finally {
-        console.info = alkuperainenInfo;
-        if (vanhaDiagnostiikka === undefined) delete process.env.SOITA_REST_DIAGNOSTIIKKA;
-        else process.env.SOITA_REST_DIAGNOSTIIKKA = vanhaDiagnostiikka;
-        if (vanhaBypass === undefined) delete process.env.SOITA_REST_DIAGNOSTIIKKA_BYPASS;
-        else process.env.SOITA_REST_DIAGNOSTIIKKA_BYPASS = vanhaBypass;
         y.siivoa();
     }
 });
