@@ -9,10 +9,12 @@ module.exports = {
         .setDescription("Lopettaa musiikin, tyhjentää jonon ja poistuu äänikanavalta."),
 
     async execute(interaction) {
+        await interaction.deferReply();
+
         const soitin = await valmisteleOhjaus(interaction);
         if (!soitin) return;
 
         soitin.lopeta();
-        await interaction.reply(satunnainen(LOPETETTU));
+        await interaction.editReply(satunnainen(LOPETETTU));
     }
 };

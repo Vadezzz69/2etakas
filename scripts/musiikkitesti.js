@@ -1953,6 +1953,86 @@ komentoTesti("toisella kanavalla oleva käyttäjä ei voi ohjata eikä kaapata s
     } finally { y.siivoa(); }
 });
 
+komentoTesti("/toisto ja /lopeta kuittaavat interactionin ennen tarkistuksia", async () => {
+    const y = komentoYmparisto();
+    try {
+        await y.komento("soita").execute(y.interaktio({ valinnat: { haku: "testi" } }));
+
+        for (const [nimi, valinnat] of [["toisto", { tila: "pois" }], ["lopeta", {}]]) {
+            const i = y.interaktio({ valinnat });
+            const inGuild = i.inGuild;
+            i.inGuild = () => {
+                assert.equal(i.deferCalls, 1, `/${nimi} kuittaa ennen palvelintarkistusta`);
+                return inGuild();
+            };
+
+            await y.komento(nimi).execute(i);
+            assert.equal(i.deferCalls, 1, `/${nimi} kuittaa vain kerran`);
+            assert.deepEqual(i.vastaukset.map(vastaus => vastaus.tyyppi), ["editReply"]);
+        }
+
+        for (const [nimi, valinnat] of [["toisto", { tila: "jono" }], ["lopeta", {}]]) {
+            const i = y.interaktio({ valinnat });
+            await y.komento(nimi).execute(i);
+            assert.equal(i.deferCalls, 1, `/${nimi} kuittaa myös virhehaaran vain kerran`);
+            assert.deepEqual(i.vastaukset.map(vastaus => vastaus.tyyppi), ["editReply"]);
+        }
+    } finally { y.siivoa(); }
+});
+
+komentoTesti("/toisto ja /lopeta eivät yritä vanhentunutta interactionia uudelleen", async () => {
+    const y = komentoYmparisto();
+    const tapahtuma = require("../events/interactionCreate");
+    const alkuperainenVirhe = console.error;
+    const alkuperainenVaroitus = console.warn;
+    const lokit = [];
+    console.error = (...args) => lokit.push(args);
+    console.warn = (...args) => lokit.push(args);
+
+    try {
+        for (const nimi of ["toisto", "lopeta"]) {
+            for (const kuittausVanhenee of [true, false]) {
+                let deferCalls = 0;
+                let editCalls = 0;
+                let muutVastausyritykset = 0;
+                const i = {
+                    id: `expired-${nimi}-${kuittausVanhenee}`,
+                    commandName: nimi,
+                    guildId: "g1",
+                    user: { id: "u1" },
+                    deferred: false,
+                    replied: false,
+                    options: { getString: () => "pois" },
+                    isChatInputCommand: () => true,
+                    inGuild: () => true,
+                    deferReply: async () => {
+                        deferCalls++;
+                        if (kuittausVanhenee) {
+                            throw Object.assign(new Error("Unknown interaction"), { code: 10062, status: 404 });
+                        }
+                        i.deferred = true;
+                    },
+                    editReply: async () => {
+                        editCalls++;
+                        throw Object.assign(new Error("Unknown interaction"), { code: 10062, status: 404 });
+                    },
+                    reply: async () => { muutVastausyritykset++; },
+                    followUp: async () => { muutVastausyritykset++; }
+                };
+
+                await tapahtuma.execute(i, { commands: new Map([[nimi, y.komento(nimi)]]) });
+                assert.equal(deferCalls, 1, `/${nimi}: yksi defer-yritys`);
+                assert.equal(editCalls, kuittausVanhenee ? 0 : 1, `/${nimi}: vanhentuneeseen vastaukseen ei tehdä uutta yritystä`);
+                assert.equal(muutVastausyritykset, 0, `/${nimi}: reply/followUp ei yritä kuitata uudelleen`);
+            }
+        }
+    } finally {
+        console.error = alkuperainenVirhe;
+        console.warn = alkuperainenVaroitus;
+        y.siivoa();
+    }
+});
+
 komentoTesti("/soita haku toimii uudelleen lopetuksen jälkeen useita kertoja", async () => {
     const y = komentoYmparisto();
     try {

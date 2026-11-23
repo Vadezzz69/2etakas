@@ -19,10 +19,12 @@ module.exports = {
         ),
 
     async execute(interaction) {
+        await interaction.deferReply();
+
         const soitin = await valmisteleOhjaus(interaction);
         if (!soitin) return;
 
         const tila = soitin.toisto(interaction.options.getString("tila"));
-        await interaction.reply(TOISTOTILAT[tila]);
+        await interaction.editReply(TOISTOTILAT[tila]);
     }
 };
