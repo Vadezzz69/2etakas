@@ -36,6 +36,17 @@ function ytdlpVirheluokka(err) {
     return ytdlp.stderrDiagnostiikka(err?.stderr ?? err?.yksityiskohta ?? err?.message).stderrLuokka;
 }
 
+function ytdlpVirheDiagnostiikka(err) {
+    const stderr = err?.stderr ?? err?.yksityiskohta ?? err?.message ?? "";
+    return {
+        varavirheluokka: ytdlpVirheluokka(err),
+        varavirheVaihe: typeof err?.vaihe === "string" ? err.vaihe : null,
+        varavirheKoodi: typeof err?.code === "string" ? err.code : null,
+        varavirheExitCode: Number.isInteger(err?.exitCode) ? err.exitCode : null,
+        varavirheOte: ytdlp.turvallinenDiagnostiikkaTeksti(stderr)
+    };
+}
+
 function voiSoundCloudVarmistus(kappale, err) {
     if (kappale.hakulahde !== "youtube" || !["YouTube", "Spotify"].includes(kappale.lahde)) return false;
     if (kappale.suoraSyote && onTarkoituksellaSaavuttamaton(err)) return false;
@@ -350,7 +361,7 @@ class Soitin {
             console.warn("[musiikki-toisto] " + JSON.stringify({
                 vaihe: "soundcloud-aanivirta-epaonnistui",
                 alkuperainenVirheluokka,
-                varavirheluokka: ytdlpVirheluokka(soundCloudVirhe)
+                ...ytdlpVirheDiagnostiikka(soundCloudVirhe)
             }));
             const yhdistettyVirhe = new MusiikkiVirhe(
                 "YouTube-äänen lataus epäonnistui, eikä samaa kappaletta saatu käynnistettyä SoundCloudista. Kokeile myöhemmin uudelleen tai valitse toinen hakutulos."
