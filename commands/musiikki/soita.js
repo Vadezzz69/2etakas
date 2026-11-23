@@ -81,7 +81,19 @@ function aloitaRestDiagnostiikka(interaction) {
             return Promise.resolve(request).then(
                 response => {
                     context.requestCompletedAt = Date.now();
-                    if (context.result) context.result.httpStatus = Number.isInteger(response?.status) ? response.status : null;
+                    if (context.result) {
+                        context.result.httpStatus = Number.isInteger(response?.status) ? response.status : null;
+                        try {
+                            context.result.discordDate = response?.headers?.get?.("date") ?? null;
+                            const discordDateMs = context.result.discordDate ? Date.parse(context.result.discordDate) : NaN;
+                            context.result.localMinusDiscordMs = Number.isFinite(discordDateMs)
+                                ? Date.now() - discordDateMs
+                                : null;
+                        } catch {
+                            context.result.discordDate = null;
+                            context.result.localMinusDiscordMs = null;
+                        }
+                    }
                     return response;
                 },
                 error => {
@@ -126,7 +138,9 @@ function aloitaRestDiagnostiikka(interaction) {
                 interactionTokenMatches: pyynto.interactionTokenMatches === true,
                 pid: process.pid,
                 httpStatus: Number.isInteger(pyynto.httpStatus) ? pyynto.httpStatus : null,
-                discordCode: Number.isInteger(virhe?.code) ? virhe.code : null
+                discordCode: Number.isInteger(virhe?.code) ? virhe.code : null,
+                discordDate: pyynto.discordDate ?? null,
+                localMinusDiscordMs: Number.isFinite(pyynto.localMinusDiscordMs) ? pyynto.localMinusDiscordMs : null
             }));
         },
         palauta() {}
