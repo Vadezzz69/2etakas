@@ -27,7 +27,7 @@ function move(data,action,rng=randomInt) {
         next.winner=target.user;
     } else {
         if (!Object.hasOwn(skills, action)) throw new Error("Tuntematon siirto.");
-        if (["special","burst"].includes(action) && actor.cooldown>0) throw new Error("Erikoisisku latailee vielä. Oota vuoro.");
+        if (["special","burst"].includes(action) && actor.cooldown>0) throw new Error("Erikoisisku latautuu vielä. Oota vuoro.");
         const burstLevel = actor.card.burstLevel ?? 10;
         if (action==="burst" && actor.card.level<burstLevel) throw new Error(`${skills.burst} avautuu tasolla ${burstLevel}.`);
         const active={...actor.status};
@@ -52,7 +52,7 @@ function move(data,action,rng=randomInt) {
                 const dodge=Math.max(0,Math.min(18,4+target.card.speed-actor.card.speed+
                     (target.card.passiveId==="dodge"?5:0)+(active.hidas?5:0)));
                 const critical=Math.min(26,5+actor.card.luck+(actor.card.passiveId==="critical"?6:0));
-                if(rng(100)<dodge) note(target,`dodges **${ability}**. Ei osunu.`);
+                if(rng(100)<dodge) note(target,`väisti **${ability}**. Ei osunu.`);
                 else {
                     const crit=rng(100)<critical;
                     const elemental=advantage(actor.card.element,target.card.element)?1.18:
