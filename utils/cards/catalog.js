@@ -8,16 +8,16 @@ const rarities = [
 ];
 
 const classes = [
-    ["Vakooja","Pimeys","Vakoilu","Varjoaskel","Kuulee kokouksen ennen kuin kokous alkaa.","dodge",{power:0.88,status:"heikko"}],
-    ["Kapinallinen","Tuli","Komitean raivo","Palohaava","Käyttää kokouspöytäkirjaa sytykkeenä.","critical",{power:1.1,status:"palo"}],
-    ["Veronkiertäjä","Myrkky","Kriittinen sakko","Kuluvähennys","Ilmoittaa jokaisen kahvikupin yrityskuluksi.","drain",{power:0.83,status:"palo"}],
-    ["Soturi","Jää","Tilapäinen porttikielto","Kilpimuuri","Saapuu äänikanavalle kypärä päässä.","armor",{power:1.04,status:"hidas"}],
-    ["Hakkeri","Teknologia","Enzonic Error 503","Varmuuskopio","Osaa käynnistää palvelun uudelleen jo ennen virhettä.","regen",{power:0.88,status:"heikko"}],
-    ["Ylivalvoja","Sähkö","Komitean ylijännite","Valvontakamera","Katsoo lokit ennen aamukahvia.","initiative",{power:1.02,status:"hidas"}],
-    ["Kaaoksen lähettiläs","Kaaos","Todisteiden hävittäminen","Poikkeuspykälä","Toimittaa mietinnön sileänä paperisilppuna.","critical",{power:1.15,status:"heikko"}],
-    ["Varjo","Vesi","Tulvakuulustelu","Hiljainen poistuminen","Luikahtaa kokouksesta ennen nimenhuutoa.","dodge",{power:1,status:"palo"}],
-    ["Komitean agentti","Valo","Agentin vastaisku","Hätävarustus","Kantaa varapöytäkirjaa takin sisätaskussa.","drain",{power:1.1,status:"hidas"}],
-    ["Byrokraatti","Neutraali","Byrokraattinen isku","Pykäläsuoja","Hakee lupaa hakea lupaa viikonloppuna.","armor",{power:1.02,status:"heikko"}]
+    ["Vakooja","Pimeys","blossit savut silmii","Varjoaskel","Kuulee kokouksen ennen kuin kokous alkaa.","dodge",{power:0.88,status:"heikko"}],
+    ["Kapinallinen","Tuli","sano VITU täysii","Palohaava","Käyttää kokouspöytäkirjaa sytykkeenä.","critical",{power:1.1,status:"palo"}],
+    ["Veronkiertäjä","Myrkky","vedätti koko servuu","Kuluvähennys","Ilmoittaa jokaisen kahvikupin yrityskuluksi.","drain",{power:0.83,status:"palo"}],
+    ["Soturi","Jää","ländäs täydellise treflipin","Kilpimuuri","Saapuu äänikanavalle kypärä päässä.","armor",{power:1.04,status:"hidas"}],
+    ["Hakkeri","Teknologia","pisti servun lagaa","Varmuuskopio","Osaa käynnistää palvelun uudelleen jo ennen virhettä.","regen",{power:0.88,status:"heikko"}],
+    ["Ylivalvoja","Sähkö","ampuu yköst servul","Valvontakamera","Katsoo lokit ennen aamukahvia.","initiative",{power:1.02,status:"hidas"}],
+    ["Kaaoksen lähettiläs","Kaaos","ländäs täydellise lazerflipin","Poikkeuspykälä","Toimittaa mietinnön sileänä paperisilppuna.","critical",{power:1.15,status:"heikko"}],
+    ["Varjo","Vesi","hävis savuihin","Hiljainen poistuminen","Luikahtaa kokouksesta ennen nimenhuutoa.","dodge",{power:1,status:"palo"}],
+    ["Komitean agentti","Valo","heitti no complyt portaist","Hätävarustus","Kantaa varapöytäkirjaa takin sisätaskussa.","drain",{power:1.1,status:"hidas"}],
+    ["Byrokraatti","Neutraali","löi kuitit tiskii","Pykäläsuoja","Hakee lupaa hakea lupaa viikonloppuna.","armor",{power:1.02,status:"heikko"}]
 ];
 const passives = {
     dodge:"Suurempi väistö",critical:"Useampi kriittinen osuma",drain:"Osuma palauttaa 2 HP",
