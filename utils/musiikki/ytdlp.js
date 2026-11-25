@@ -13,6 +13,7 @@ const JULKAISU_API_URL = "https://api.github.com/repos/yt-dlp/yt-dlp/releases/la
 const JSON_MAX_TAVUA = 20 * 1024 * 1024;
 const STDERR_MAX_MERKKIA = 500;
 const VIRTA_ALKU_AIKARAJA_MS = 30_000;
+const VIRTA_PUSKURI_TAVUA = 256 * 1024;
 const SC_PREVIEW_TUNNISTE = "_preview";
 const BINARI_MAX_TAVUA = 100 * 1024 * 1024;
 const METATIETO_MAX_RINNAKKAIN = 1;
@@ -682,6 +683,8 @@ async function virta(kohde, { signal, soundCloud = false } = {}) {
     let aanivirtaValmis = false;
     let viimeisteleKaynnistys = () => {};
     const mitattuVirta = new Transform({
+        // Luetaan pakattua ääntä edelle ilman erillistä odotusta soiton alussa.
+        highWaterMark: VIRTA_PUSKURI_TAVUA,
         transform(pala, koodaus, valmis) {
             tavuja += pala.length;
             valmis(null, pala);

@@ -137,8 +137,9 @@ module.exports = {
                 }));
                 return;
             }
+            const soittolistaId = haku.lista && haku.lahde === "YouTube" ? Symbol("YouTube-soittolista") : undefined;
             const kappaleet = valittu ? [valittu] : haku.lista
-                ? haku.kappaleet.map(kappale => ({ ...kappale, soittolista: true }))
+                ? haku.kappaleet.map(kappale => ({ ...kappale, soittolista: true, soittolistaId }))
                 : haku.kappaleet;
 
             // Soitin haetaan vasta nyt: haun aikana toinen käyttäjä on voinut luoda sen.

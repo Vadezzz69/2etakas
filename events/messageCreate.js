@@ -1,5 +1,6 @@
 const { Events } = require("discord.js");
 const { kirjaaViesti } = require("../utils/tilastot");
+const { kasitteleOsu } = require("../utils/osu");
 const {
     lisaaMukautettuKomento,
     haeMukautettuKomento,
@@ -112,6 +113,10 @@ module.exports = {
 
         const sisalto = message.content?.trim();
         if (!sisalto || !sisalto.startsWith("!")) return;
+
+        if (/^!osu(?:\s|$)/i.test(sisalto)) {
+            return kasitteleOsu(message, sisalto.split(/\s+/).slice(1));
+        }
 
         try {
 

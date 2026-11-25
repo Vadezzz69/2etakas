@@ -79,7 +79,7 @@ function liitaPaneeli(soitin) {
             kaynnistaEtenemispaivitykset();
         }
         if (tapahtuma.tyyppi === "virhe") {
-            if (tapahtuma.kappale.soittolista) {
+            if (tapahtuma.kappale.soittolista && !tapahtuma.listaEstetty) {
                 virheita++;
                 if (esimerkit.length < 3) esimerkit.push(tapahtuma);
                 if (!koosteAjastin) {

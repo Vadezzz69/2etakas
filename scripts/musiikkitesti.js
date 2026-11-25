@@ -6,15 +6,17 @@
  * ja feikkivirroilla, sekä lähteiden tulkinnan (URL-sallilista, Spotify-jäsennys,
  * yt-dlp-vastaukset) feikkivastauksilla. Ei tarvitse verkkoa, yt-dlp:tä, ffmpegiä
  * eikä @discordjs/voice-kirjastoa. EI testaa oikeaa äänen toistoa Discordissa.
+ * Jos äänikirjasto on asennettu, testaa myös äänidatan katkoksen paikallisesti.
  */
 
 const assert = require("node:assert/strict");
-const { EventEmitter } = require("node:events");
+const { EventEmitter, once } = require("node:events");
 const fs = require("node:fs");
 const path = require("node:path");
 const { PassThrough } = require("node:stream");
 
 const { Soitin } = require("../utils/musiikki/soitin");
+const { lataaAaniKirjasto } = require("../utils/musiikki/config");
 const lahteet = require("../utils/musiikki/lahteet");
 const ytdlp = require("../utils/musiikki/ytdlp");
 
@@ -523,6 +525,56 @@ testi("ennenaikainen Idle ja saman resurssin myöhäinen error siirtävät jonoa
     assert.deepEqual(soitin.toistettu.map(k => k.otsikko), ["a", "b", "c"]);
     assert.equal(tapahtumat.filter(t => t.tyyppi === "virhe").length, 1);
     s.lopeta();
+});
+
+testi("lyhyt äänidatan katkos ei siirrä jonoa mutta virran loppu siirtää", async () => {
+    const { ok, voice } = lataaAaniKirjasto();
+    if (!ok) return;
+
+    const virta = new PassThrough({ objectMode: true });
+    const paketti = Buffer.from([0xf8, 0xff, 0xfe]);
+    const s = new Soitin({
+        guildId: "katkostesti",
+        voice: {
+            ...voice,
+            createAudioResource: (stream, options) => voice.createAudioResource(stream, {
+                inputType: voice.StreamType.Opus,
+                metadata: options.metadata
+            })
+        },
+        luoVirta: async kappale => {
+            const stream = kappale.otsikko === "a" ? virta : new PassThrough({ objectMode: true });
+            return { stream, tavuja: () => paketti.length, sulje: () => stream.destroy() };
+        }
+    });
+    s.soitin.subscribe({
+        state: { status: voice.VoiceConnectionStatus.Ready },
+        setSpeaking() {},
+        dispatchAudio() {},
+        prepareAudioPacket() {}
+    });
+
+    try {
+        const alkoi = once(s.soitin, voice.AudioPlayerStatus.Playing, { signal: AbortSignal.timeout(1500) });
+        s.lisaa([k("a", { kesto: 0 }), k("b")]);
+        virta.write(paketti);
+        await alkoi;
+        await aika(350);
+        assert.equal(s.nyt.otsikko, "a");
+        assert.equal(s.soitin.state.status, voice.AudioPlayerStatus.Playing);
+        const soitettuMs = s.soitin.state.resource.playbackDuration;
+
+        virta.write(paketti);
+        await aika(90);
+        assert.equal(s.soitin.state.resource.playbackDuration, soitettuMs + 20);
+
+        const loppui = once(s.soitin, voice.AudioPlayerStatus.Idle, { signal: AbortSignal.timeout(1000) });
+        virta.end();
+        await loppui;
+        assert.equal(s.nyt.otsikko, "b");
+    } finally {
+        s.lopeta();
+    }
 });
 
 testi("äänivirran prosessivirhe jatkaa seuraavaan ilman ylimääräistä ohitusta", async () => {
@@ -1780,6 +1832,51 @@ komentoTesti("soittolistan virheet kootaan yhteen viestiin ja soitin aukeaa vast
         assert.equal(y.lahetetyt.length, 1);
         assert.match(y.lahetetyt[0].embeds[0].data.title, /8 kappaletta/);
     } finally { y.siivoa(); }
+});
+
+komentoTesti("YouTuben bottivarmistus keskeyttää vain estyneen soittolistan", async () => {
+    const y = komentoYmparisto();
+    try {
+        const youtube = "https://www.youtube.com/playlist?list=PLabcdef";
+        const aloitus = "https://soundcloud.com/a/aloitus";
+        const jatko = "https://soundcloud.com/a/jatko";
+        const estyneet = Array.from({ length: 4 }, (_, i) => `https://www.youtube.com/watch?v=video${i}`);
+        ytdlp.tiedot = async url => url === youtube ? {
+            title: "Lista",
+            entries: estyneet.map((url, i) => ({ title: `Kappale ${i + 1}`, url, duration: 180 }))
+        } : { title: "Kappale", url, duration: 180 };
+        const yritykset = [];
+        const luoVirta = ytdlp.virta;
+        let toistoEstetty = true;
+        ytdlp.virta = async (url, optiot) => {
+            yritykset.push(url);
+            if (toistoEstetty && estyneet.includes(url)) {
+                throw ytdlp.luoYtdlpVirhe({ stderr: "Sign in to confirm you’re not a bot" });
+            }
+            return luoVirta(url, optiot);
+        };
+
+        const soita = y.komento("soita");
+        for (const haku of [aloitus, youtube, jatko, youtube]) {
+            await soita.execute(y.interaktio({ valinnat: { haku } }));
+        }
+        const s = y.soitinModuuli.haeSoitin("g1");
+        s.soitin.loppui();
+        await aika(15);
+
+        assert.deepEqual(yritykset, [aloitus, estyneet[0], jatko]);
+        assert.equal(s.nyt.url, jatko);
+        assert.deepEqual(s.jono.map(kappale => kappale.url), estyneet);
+        assert.equal(y.lahetetyt.filter(viesti => /soittamatta 4 kappaletta/.test(teksti(viesti))).length, 1);
+
+        toistoEstetty = false;
+        s.soitin.loppui();
+        await aika(15);
+        assert.equal(s.nyt.url, estyneet[0]);
+        assert.deepEqual(s.jono.map(kappale => kappale.url), estyneet.slice(1));
+    } finally {
+        y.siivoa();
+    }
 });
 
 komentoTesti("/soita lisää setin nykyiseen jonoon kerran ja avaa vain soivan virran", async () => {

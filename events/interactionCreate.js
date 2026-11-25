@@ -10,6 +10,7 @@ const { VIRHEVIESTIT, VANHAT_KOMENNOT } = require("../utils/comedy/data/viestit"
 // Tunnistaa saman Discord-interaktion myös silloin, jos siitä syntyy uusi olio.
 const kasitellytInteraktiot = new Map();
 const INTERAKTION_SAILYTYSAIKA_MS = 15 * 60 * 1000;
+let seuraavaInteraktioSiivousMs = 0;
 
 function kirjaaInteractionAika(interaction, vaihe, tiedot = {}) {
     if (process.env.SOITA_REST_DIAGNOSTIIKKA === "1") return;
@@ -66,8 +67,11 @@ module.exports = {
         if (!uusiToiminto && !onMusiikkiPainike && !interaction.isChatInputCommand()) return;
 
         const nyt = Date.now();
-        for (const [id, aikaleima] of kasitellytInteraktiot) {
-            if (nyt - aikaleima > INTERAKTION_SAILYTYSAIKA_MS) kasitellytInteraktiot.delete(id);
+        if (nyt >= seuraavaInteraktioSiivousMs) {
+            seuraavaInteraktioSiivousMs = nyt + 60_000;
+            for (const [id, aikaleima] of kasitellytInteraktiot) {
+                if (nyt - aikaleima > INTERAKTION_SAILYTYSAIKA_MS) kasitellytInteraktiot.delete(id);
+            }
         }
 
         if (kasitellytInteraktiot.has(interaction.id)) {
@@ -149,7 +153,11 @@ module.exports = {
                 interactionId: interaction.id,
                 deferred: interaction.deferred,
                 replied: interaction.replied,
-                pid: process.pid
+                pid: process.pid,
+                ikaSaapuessaMs: Number.isFinite(interaction.createdTimestamp)
+                    ? saapuiMs - interaction.createdTimestamp : null,
+                aikaSaapumisestaVirheeseenMs: Date.now() - saapuiMs,
+                gatewayPingMs: Number.isFinite(client.ws?.ping) ? client.ws.ping : null
             });
             if (Number(err?.code) === 10062) {
                 console.warn("⚠️ Interaction vanheni ennen komennon valmistumista; virhevastausta ei yritetty uudelleen.");

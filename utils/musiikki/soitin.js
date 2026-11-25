@@ -13,6 +13,8 @@ const { createHash, randomUUID } = require("node:crypto");
 
 const soittimet = new Map(); // guildId -> Soitin
 const TOISTOTILAT = ["pois", "kappale", "jono"];
+// Discordin äänikehys kestää 20 ms. Siedetään noin 3 s tilapäistä katkosta.
+const SAALLITUT_PUUTTUVAT_KEHYKSET = 150;
 
 async function oletusLuoVirta(kappale, { signal }) {
     return ytdlp.virta(kappale.url ?? hakulause(kappale), { signal, soundCloud: onSoundCloud(kappale) });
@@ -120,7 +122,10 @@ class Soitin {
         this.ajastinYksin = null;
 
         this.soitin = voice.createAudioPlayer({
-            behaviors: { noSubscriber: voice.NoSubscriberBehavior.Pause }
+            behaviors: {
+                noSubscriber: voice.NoSubscriberBehavior.Pause,
+                maxMissedFrames: SAALLITUT_PUUTTUVAT_KEHYKSET
+            }
         });
 
         this.soitin.on(voice.AudioPlayerStatus.Playing, (_, tila) => {
@@ -384,6 +389,15 @@ class Soitin {
         this.#suljeToisto();
         if (!virhe) return;
 
+        const listaEstetty = kappale.soittolistaId && soitettuMs === 0 &&
+            /\bnot a bot\b/i.test(stderr ?? virhe.message);
+        let ohitettuListalta = 0;
+        if (listaEstetty) {
+            const jonossa = this.jono.length;
+            this.jono = this.jono.filter(k => k.soittolistaId !== kappale.soittolistaId);
+            ohitettuListalta = 1 + jonossa - this.jono.length;
+        }
+
         console.warn("[musiikki-toisto] " + JSON.stringify({
             vaihe: "aanivirta-epäonnistui",
             lahde: kappale.lahde,
@@ -391,11 +405,15 @@ class Soitin {
             virheluokka: ytdlpVirheluokka(toistovirhe),
             odotettuMs: odotettuMs || null,
             soitettuMs,
-            syy: virhe.kayttajaViesti ?? virhe.vaihe ?? null
+            syy: virhe.kayttajaViesti ?? virhe.vaihe ?? null,
+            ...(listaEstetty ? { ohitettuListalta } : {})
         }));
         if (this.silmukka === "kappale") this.silmukka = "pois";
         this.nyt = null;
-        this.ilmoita({ tyyppi: "virhe", kappale, viesti: toistovirheenKayttajaViesti(toistovirhe, kappale) });
+        const viesti = listaEstetty
+            ? `YouTube vaatii palvelimelta bottivarmistuksen. Listalta jäi soittamatta ${ohitettuListalta} kappaletta.`
+            : toistovirheenKayttajaViesti(toistovirhe, kappale);
+        this.ilmoita({ tyyppi: "virhe", kappale, viesti, listaEstetty });
     }
 
     async #seuraava({ ohitus = false } = {}) {

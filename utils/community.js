@@ -39,7 +39,22 @@ function modal(id, title, fields) {
 
 async function execute(interaction, task, publicly = false) {
     if (!interaction.inGuild()) return interaction.reply({ ...failure("Toiminto toimii palvelimella."), ...privateReply });
-    await interaction.deferReply(publicly ? {} : privateReply);
+    const kuittausAlkoiMs = Date.now();
+    const kuittausAlkoi = performance.now();
+    try {
+        await interaction.deferReply(publicly ? {} : privateReply);
+    } catch (err) {
+        if (Number(err?.code) === 10062) {
+            console.warn("[komitea-kuittaus]", {
+                komento: interaction.commandName ?? null,
+                interactionId: interaction.id,
+                ikaEnnenKuittaustaMs: Number.isFinite(interaction.createdTimestamp)
+                    ? kuittausAlkoiMs - interaction.createdTimestamp : null,
+                kuittauspyyntoMs: Math.round(performance.now() - kuittausAlkoi)
+            });
+        }
+        throw err;
+    }
     try {
         const payload = await task(interaction);
         if (payload) {

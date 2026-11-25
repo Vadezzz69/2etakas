@@ -40,6 +40,12 @@ suoraan jäsenen omasta määrityksestä, joten koodia ei ole kahdessa paikassa.
 Lisäksi viestikäsittelijä tukee `!add !avainsana = vastaus`, `!lista`, `!poista !avainsana`
 ja tallennettuja `!avainsana`-vastauksia (vaatii Message Content Intentin).
 
+### osu!-haasteet
+
+- `!osu` arpoo yhden kartan kustakin osu!standardin kuudesta tähtiluokasta.
+- `!osu helppo` arpoo Easy- ja Normal-karttoja, `!osu keskitaso` Hard- ja Insane-karttoja ja `!osu vaikea` Expert- ja Expert+-karttoja.
+- Palvelimen hallintaoikeudella `!osu kanava #osu-haasteet` asettaa oman haastekanavan ja lähettää ohjeviestin sinne. Kanavan voi asettaa myös kirjoittamalla `!osu kanava` kyseisellä kanavalla.
+
 ## Musiikki
 
 Botti soittaa musiikkia äänikanavalla. Komennot: `/soita <haku tai linkki>`, `/jono`, `/nyt`,
