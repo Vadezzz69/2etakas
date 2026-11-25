@@ -1,5 +1,5 @@
 const { render,label }=require("../renderPng");
-const { labels }=require("./combat");
+const { labels, skills }=require("./combat");
 const { rarities,passives }=require("./catalog");
 
 async function avatar(canvas, address) {
@@ -122,7 +122,7 @@ function card(user,stats,edition=stats.edition) {
         ctx.fillStyle=crimson;
         ctx.fillRect(42,423,476*Math.min(1,stats.xp/stats.next),3);
 
-        [[ "HP",stats.hp ],["HYÖKKÄYS",stats.attack],["PUOLUSTUS",stats.defense],["NOPEUS",stats.speed],["ONNI",stats.luck]].forEach(([n,v],i)=>{
+        [[ "HP",stats.hp ],["ISKU",stats.attack],["SUOJAT",stats.defense],["SPIDI",stats.speed],["RNG",stats.luck]].forEach(([n,v],i)=>{
             const x=42+96*i;
             ctx.fillStyle="#181117";
             ctx.fillRect(x,448,92,54);
@@ -132,17 +132,17 @@ function card(user,stats,edition=stats.edition) {
             label(ctx,v,x+7,491,78,18,ink,true);
         });
 
-        label(ctx,"ERIKOISLIIKE",42,533,476,10,crimson,true);
+        label(ctx,"KUULUISIN TEMPPU",42,533,476,10,crimson,true);
         label(ctx,stats.ability,42,555,476,16,ink,true);
         label(ctx,labels[stats.move?.status] ?? "Isku",42,574,476,12,muted);
-        label(ctx,"PASSIIVINEN KYKY",42,605,476,10,crimson,true);
+        label(ctx,"AUTOMAATTISESTI PÄÄLLÄ",42,605,476,10,crimson,true);
         label(ctx,stats.passive,42,627,476,16,ink,true);
         label(ctx,passives[stats.passiveId],42,646,476,12,muted);
-        label(ctx,stats.level>=stats.burstLevel?"Arkistomyrsky avattu":`Arkistomyrsky avautuu tasolla ${stats.burstLevel}`,42,674,476,12,muted);
+        label(ctx,stats.level>=stats.burstLevel?`${skills.burst} avattu`:`${skills.burst} avautuu tasolla ${stats.burstLevel}`,42,674,476,12,muted);
         label(ctx,stats.description,42,709,476,13,ink);
         ctx.fillStyle=rule;
         ctx.fillRect(42,728,476,1);
-        label(ctx,`PAINOS ${edition}  /  #${stats.id}  /  ARVO ${rarity.value}`,42,752,476,11,color);
+        label(ctx,`DROP ${edition}  /  #${stats.id}  /  ARVO ${rarity.value}`,42,752,476,11,color);
         return c.encode("png");
     }, () => downloaded);
 }

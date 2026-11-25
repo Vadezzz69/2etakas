@@ -15,8 +15,8 @@ function stageLevels() {
 function stages() {
     const [agent, special, legend] = stageLevels();
     return [
-        [1, "Komitean harjoittelija"], [agent, "Agentti"],
-        [special, "Erikoisagentti"], [legend, "Komitean legenda"]
+        [1, "Vielä lämppää"], [agent, "Pääs lobbyyn"],
+        [special, "Servun vakiokalusto"], [legend, "Ländäs sen oikeesti"]
     ];
 }
 

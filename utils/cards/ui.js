@@ -8,6 +8,7 @@ const { rarities,items }=require("./catalog");
 const economy=require("./economy");
 const battle=require("./battles");
 const duelUi=require("./duelUi");
+const { skills }=require("./combat");
 const collection=require("./collection");
 const boss=require("./boss");
 const progression=require("./progression");
@@ -130,7 +131,7 @@ async function development(i) {
 ${palkki(s.xp/s.next*100,12)} ${s.xp}/${s.next} XP
 
 `+
-        (s.level>=s.burstLevel?"Arkistomyrsky on avattu.":`Arkistomyrsky avautuu tasolla ${s.burstLevel}.`)+`
+        (s.level>=s.burstLevel?`${skills.burst} on avattu.`:`${skills.burst} avautuu tasolla ${s.burstLevel}.`)+`
 Koulutusoppaita: ${books}.`,[
         row(btn("train","Käytä koulutusopas",ButtonStyle.Primary,!books),btn("tasks","Tehtävät"),btn("shop","Kauppa"))
     ]);

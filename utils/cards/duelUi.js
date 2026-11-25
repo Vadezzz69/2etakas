@@ -8,12 +8,12 @@ function duel(record) {
     const data=JSON.parse(record.data);
     const key=(action,label,style,disabled)=>button(`kc:duel:${record.id}:${record.rev}:${action}`,label,style,disabled);
     const components=[];
-    let title="Komitea Cards · Taistelu";
+    let title="Komitea Cards · Servumatsi";
     let status="";
     if(record.state==="pending") {
-        title="Taisteluhaaste";
+        title="Tuuks ykköst servul?";
         status=`<@${record.p1}> haastaa käyttäjän <@${record.p2}>. Hyväksy haaste ennen <t:${Math.floor(record.expires/1000)}:t>.`;
-        components.push(row(key("accept","Hyväksy",ButtonStyle.Primary),key("decline","Hylkää",ButtonStyle.Secondary)));
+        components.push(row(key("accept","Tuun",ButtonStyle.Primary),key("decline","En tuu",ButtonStyle.Secondary)));
     } else if(record.state==="playing"){
         const p=data.players[data.turn];
         status=`Kierros ${1+Math.floor(data.step/2)} · <@${p.user}> on vuorossa.`;
@@ -21,8 +21,8 @@ function duel(record) {
             key("defend",skills.defend,ButtonStyle.Secondary),key("heal",skills.heal,ButtonStyle.Secondary,p.hp===p.card.hp)));
         components.push(row(key("burst",skills.burst,ButtonStyle.Secondary,p.card.level<(p.card.burstLevel ?? 10)||p.cooldown>0),key("retreat",skills.retreat,ButtonStyle.Danger)));
     } else {
-        status=record.state==="finished"?(record.winner?`Voittaja <@${record.winner}> · ${record.ranked?"sijoituspalkinto kirjattu":"harjoitusottelu"}`:"Tasapeli."):
-            record.state==="declined"?"Haaste peruutettiin.":"Taistelu vanheni.";
+        status=record.state==="finished"?(record.winner?`GG. Voittaja <@${record.winner}> · ${record.ranked?"sijoituspalkinto kirjattu":"harjoitusottelu"}`:"Tasapeli. Kumpikaan ei saanu klippiä."):
+            record.state==="declined"?"Haaste peruutettiin. Lobby jäi tyhjäks.":"Taistelu vanheni. Kaikki oli AFK.";
     }
     const fields=data.players.map(p=>({name:`Taso ${p.card.level} · ${p.card.name}`,
         value:`<@${p.user}> · ${p.card.element}\n${palkki(100*p.hp/p.card.hp,8)} ${p.hp}/${p.card.hp} HP\n${Object.keys(p.status).map(x=>labels[x]).concat(p.guard?["Puolustus"]:[],p.cooldown?[`Lataus ${p.cooldown}`]:[]).join(" · ")||"Valmis"}`,
