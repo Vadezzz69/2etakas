@@ -485,6 +485,18 @@ function tietueet(data) {
  * @property {boolean} suoraSyote      käyttäjä antoi lähdelinkin suoraan
  */
 
+function onSoundCloudPreview(kappale) {
+    if (!kappale) return false;
+    const onSoundCloud = kappale.lahde === "SoundCloud" ||
+        kappale.hakulahde === "soundcloud" ||
+        /soundcloud\.com/i.test(kappale.url ?? "");
+    if (!onSoundCloud) return false;
+
+    if (kappale.esikatselu) return true;
+    if (typeof kappale.kesto === "number" && kappale.kesto > 0 && kappale.kesto <= 30) return true;
+    return false;
+}
+
 function ytdlpKappale(e, { pyytaja, hakulahde, suoraSyote = false }) {
     const url = [e.webpage_url, e.permalink_url, e.url]
         .find(u => typeof u === "string" && /^https?:\/\//.test(u))
@@ -504,18 +516,27 @@ function ytdlpKappale(e, { pyytaja, hakulahde, suoraSyote = false }) {
         e.uploader,
         e.channel
     ].find(arvo => typeof arvo === "string" && arvo.trim());
+    const onSoundCloud = lahde === "SoundCloud" || hakulahde === "soundcloud" || /soundcloud\.com/i.test(url);
+    const kesto = Number.isFinite(e.duration) ? Math.round(e.duration) : null;
+    const esikatselu = Boolean(
+        e.policy === "SNIP" ||
+        (Number.isFinite(e.full_duration) && Number.isFinite(e.duration) && e.duration < e.full_duration) ||
+        (onSoundCloud && kesto !== null && kesto <= 30) ||
+        /\b(?:preview|snippet)\b/i.test(otsikko)
+    );
 
     return {
         otsikko: siivoa(otsikko),
         artisti: siivoa(artisti ?? "", 80) || null,
-        kesto: Number.isFinite(e.duration) ? Math.round(e.duration) : null,
+        kesto,
         url,
         kuva: typeof kuva === "string" ? kuva : null,
         lahde,
         hakulahde,
         pyytaja: pyytaja ?? null,
         suoraSyote,
-        suora: Boolean(e.is_live || e.live_status === "is_live")
+        suora: Boolean(e.is_live || e.live_status === "is_live"),
+        esikatselu
     };
 }
 
@@ -525,7 +546,8 @@ function suodata(kappaleet, asetukset) {
     const hylkaysSyyt = { suoraLahetys: 0, liianPitka: 0, muu: 0 };
 
     const kelvolliset = kappaleet.filter(k => {
-        const kelpaa = !k.suora && (k.kesto === null || k.kesto <= asetukset.maxKestoS);
+        const esikatselu = Boolean(k.esikatselu || onSoundCloudPreview(k));
+        const kelpaa = !k.suora && !esikatselu && (k.kesto === null || k.kesto <= asetukset.maxKestoS);
         if (!kelpaa) {
             hylatty++;
             if (k.suora) hylkaysSyyt.suoraLahetys++;
