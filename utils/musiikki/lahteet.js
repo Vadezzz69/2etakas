@@ -425,9 +425,15 @@ function hakuVirhe(epaonnistumiset, lahteet) {
 
 /** Palauttaa URL-olion jos syöte on http(s)-linkki, muuten null. */
 function jasennaUrl(syote) {
-    if (!/^https?:\/\//i.test(syote.trim())) return null;
+    let teksti = syote.trim();
+    const muotoiltu = /^(?:<(https?:\/\/[^<>\s]+)>|\[[^\]\r\n]+\]\((https?:\/\/[^\s]+)\))$/i.exec(teksti);
+    if (muotoiltu) teksti = muotoiltu[1] ?? muotoiltu[2];
+    if (/^(?:(?:www\.|music\.)?youtube\.com|youtu\.be|(?:www\.|m\.|on\.)?soundcloud\.com)\//i.test(teksti)) {
+        teksti = `https://${teksti}`;
+    }
+    if (!/^https?:\/\//i.test(teksti)) return null;
     try {
-        return new URL(syote.trim());
+        return new URL(teksti);
     } catch {
         return null;
     }

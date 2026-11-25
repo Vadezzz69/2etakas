@@ -27,48 +27,122 @@ function card(user,stats,edition=stats.edition) {
         const ctx=c.getContext("2d");
         const rarity=rarities[stats.rarity];
         const color=stats.color ?? (stats.equipped==="kehys"?"#ffc468":rarity.color);
-        const panel=ctx.createLinearGradient(0,0,560,800);
-        panel.addColorStop(0,stats.equipped==="tausta"?"#153351":rarity.background);
-        panel.addColorStop(1,"#080d18");
-        ctx.fillStyle=panel;ctx.fillRect(0,0,560,800);
-        ctx.strokeStyle=color;ctx.lineWidth=8;ctx.strokeRect(14,14,532,772);
-        ctx.lineWidth=1;ctx.globalAlpha=0.34;
-        for(let x=-220;x<740;x+=Math.max(14,35-stats.rarity*3)){
-            ctx.beginPath();ctx.moveTo(x,38);ctx.lineTo(x+220,510);ctx.stroke();
+        const ink = "#e6e0e2";
+        const muted = "#aca2ac";
+        const crimson = "#dd365e";
+        const rule = "#37252f";
+        const panel = ctx.createRadialGradient(381,244,15,370,248,400);
+        panel.addColorStop(0,stats.equipped === "tausta" ? "#1f2638" : "#25111b");
+        panel.addColorStop(0.62,"#100c12");
+        panel.addColorStop(1,"#08070a");
+        ctx.fillStyle = panel;
+        ctx.fillRect(0,0,560,800);
+
+        ctx.strokeStyle = rule;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(20.5,20.5,519,759);
+        ctx.strokeStyle = color;
+        for (const [x,y,dx,dy] of [[20,20,1,1],[540,20,-1,1],[20,780,1,-1],[540,780,-1,-1]]) {
+            ctx.beginPath();
+            ctx.moveTo(x+dx*26,y);
+            ctx.lineTo(x,y);
+            ctx.lineTo(x,y+dy*26);
+            ctx.stroke();
         }
-        if(stats.rarity>=3||stats.equipped==="holo"){
-            const foil=ctx.createLinearGradient(20,40,520,390);
-            foil.addColorStop(0,"#6affcf30");foil.addColorStop(.5,"#ff8cc680");foil.addColorStop(1,"#769aff20");
-            ctx.fillStyle=foil;ctx.fillRect(25,28,510,360);
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(22,131,516,228);
+        ctx.clip();
+        ctx.strokeStyle = crimson;
+        ctx.globalAlpha = 0.46;
+        for (let i=0;i<5;i++) {
+            ctx.beginPath();
+            ctx.ellipse(281,242,118+i*24,30+i*10,-0.47,0.15*i,Math.PI*1.82+0.15*i);
+            ctx.stroke();
         }
-        ctx.globalAlpha=1;
-        label(ctx,"KOMITEA CARDS",40,61,480,20,color,true);
-        label(ctx,name,40,108,480,35,"#fff",true);
-        label(ctx,`${rarity.name.toUpperCase()} · ${stats.name} · ${stats.element}`,40,138,480,18,color,true);
+        ctx.globalAlpha = 0.22;
+        for (let i=0;i<85;i++) {
+            const x=24+(i*83)%510;
+            const y=137+(i*53)%218;
+            ctx.fillStyle = i%3===0 ? crimson : ink;
+            ctx.fillRect(x,y,i%9===0?3:1,1);
+        }
+        if (stats.rarity>=3 || stats.equipped==="holo") {
+            const foil=ctx.createLinearGradient(24,130,540,342);
+            foil.addColorStop(0,"#88b8ff00");
+            foil.addColorStop(0.55,"#bd75ff");
+            foil.addColorStop(1,"#f988b700");
+            ctx.globalAlpha=0.18;
+            ctx.fillStyle=foil;
+            ctx.fillRect(24,130,512,220);
+        }
+        ctx.restore();
+
+        label(ctx,"KOMITEA / CARDS",42,55,350,12,muted,true);
+        ctx.fillStyle=crimson;
+        ctx.fillRect(42,68,25,2);
+        label(ctx,name,42,102,476,27,ink,true);
+        label(ctx,`${rarity.name.toUpperCase()}  /  ${stats.name}  /  ${stats.element}`,42,125,476,12,color);
         const img=avatarUrl?await avatar(canvas,avatarUrl).catch(()=>null):null;
         downloaded = !avatarUrl || Boolean(img);
-        ctx.save();ctx.beginPath();ctx.arc(280,250,89,0,Math.PI*2);ctx.clip();
-        ctx.fillStyle="#273559";ctx.fillRect(190,160,180,180);
-        if(img) ctx.drawImage(img,190,160,180,180);
-        else label(ctx,name.slice(0,2).toUpperCase(),232,270,110,52,color,true);
+
+        const portrait = new canvas.Path2D();
+        portrait.moveTo(235,153);
+        portrait.lineTo(347,153);
+        portrait.lineTo(369,175);
+        portrait.lineTo(369,320);
+        portrait.lineTo(325,350);
+        portrait.lineTo(212,350);
+        portrait.lineTo(190,328);
+        portrait.lineTo(190,183);
+        portrait.closePath();
+        ctx.save();
+        ctx.clip(portrait);
+        ctx.fillStyle="#231b26";
+        ctx.fillRect(190,153,179,197);
+        if (img) {
+            const size=Math.min(img.width,img.height);
+            ctx.drawImage(img,(img.width-size)/2,(img.height-size)/2,size,size,179,153,201,201);
+        } else {
+            label(ctx,name.slice(0,2).toUpperCase(),249,263,110,34,ink,true);
+        }
         ctx.restore();
-        ctx.beginPath();ctx.arc(280,250,91,0,Math.PI*2);ctx.strokeStyle=color;ctx.lineWidth=3;ctx.stroke();
-        label(ctx,`LV ${stats.level}  ·  ${stats.equipped==="titteli"?"Pykälämestari":stats.stage}`,40,378,480,24,"#fff",true);
-        label(ctx,`${stats.xp} XP  /  ${stats.next} XP`,40,408,480,18,color);
-        ctx.fillStyle="#293249";ctx.fillRect(40,424,480,7);
-        ctx.fillStyle=color;ctx.fillRect(40,424,480*Math.min(1,stats.xp/stats.next),7);
+        ctx.strokeStyle=color;
+        ctx.stroke(portrait);
+        ctx.fillStyle=crimson;
+        ctx.fillRect(42,353,53,2);
+        ctx.fillStyle=rule;
+        ctx.fillRect(95,353,423,1);
+
+        label(ctx,`LV ${stats.level}  /  ${stats.equipped==="titteli"?"Pykälämestari":stats.stage}`,42,386,476,16,ink,true);
+        label(ctx,`${stats.xp} / ${stats.next} XP`,42,411,476,12,muted);
+        ctx.fillStyle=rule;
+        ctx.fillRect(42,423,476,3);
+        ctx.fillStyle=crimson;
+        ctx.fillRect(42,423,476*Math.min(1,stats.xp/stats.next),3);
+
         [[ "HP",stats.hp ],["HYÖKKÄYS",stats.attack],["PUOLUSTUS",stats.defense],["NOPEUS",stats.speed],["ONNI",stats.luck]].forEach(([n,v],i)=>{
-            const x=40+98*i;
-            ctx.fillStyle="#232d43";ctx.fillRect(x,451,88,65);
-            label(ctx,n,x+5,469,80,11,color,true);label(ctx,v,x+5,501,80,23,"#fff",true);
+            const x=42+96*i;
+            ctx.fillStyle="#181117";
+            ctx.fillRect(x,448,92,54);
+            ctx.fillStyle=rule;
+            ctx.fillRect(x,448,92,1);
+            label(ctx,n,x+7,466,78,10,muted);
+            label(ctx,v,x+7,491,78,18,ink,true);
         });
-        label(ctx,"ERIKOISLIIKE",40,552,480,14,color,true);
-        label(ctx,`${stats.ability} · ${labels[stats.move?.status] ?? "Isku"}`,40,581,480,22,"#fff",true);
-        label(ctx,"PASSIIVINEN KYKY",40,617,480,14,color,true);
-        label(ctx,`${stats.passive} · ${passives[stats.passiveId]}`,40,644,480,19,"#fff",true);
-        label(ctx,stats.level>=stats.burstLevel?"Arkistomyrsky avattu":`Arkistomyrsky avautuu tasolla ${stats.burstLevel}`,40,679,480,17,color);
-        label(ctx,stats.description,40,719,480,16);
-        label(ctx,`PAINOS ${edition}  ·  #${stats.id}  ·  ARVO ${rarity.value}`,40,755,480,15,color,true);
+
+        label(ctx,"ERIKOISLIIKE",42,533,476,10,crimson,true);
+        label(ctx,stats.ability,42,555,476,16,ink,true);
+        label(ctx,labels[stats.move?.status] ?? "Isku",42,574,476,12,muted);
+        label(ctx,"PASSIIVINEN KYKY",42,605,476,10,crimson,true);
+        label(ctx,stats.passive,42,627,476,16,ink,true);
+        label(ctx,passives[stats.passiveId],42,646,476,12,muted);
+        label(ctx,stats.level>=stats.burstLevel?"Arkistomyrsky avattu":`Arkistomyrsky avautuu tasolla ${stats.burstLevel}`,42,674,476,12,muted);
+        label(ctx,stats.description,42,709,476,13,ink);
+        ctx.fillStyle=rule;
+        ctx.fillRect(42,728,476,1);
+        label(ctx,`PAINOS ${edition}  /  #${stats.id}  /  ARVO ${rarity.value}`,42,752,476,11,color);
         return c.encode("png");
     }, () => downloaded);
 }

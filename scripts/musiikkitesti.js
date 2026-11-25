@@ -1543,6 +1543,31 @@ function painikkeet(nakyma) {
     return nakyma.components.flatMap(rivi => rivi.components.map(osa => osa.toJSON()));
 }
 
+komentoTesti("paneelin linkkimodaali jonottaa Markdown-muotoisen SoundCloud-setin", async () => {
+    const y = komentoYmparisto();
+    const url = "https://soundcloud.com/vade2e/sets/old";
+    const kappaleet = ["koe-a", "koe-b"].map(x => ({
+        title: x, url: `https://soundcloud.com/vade2e/${x}`, duration: 150, ie_key: "Soundcloud"
+    }));
+    try {
+        ytdlp.tiedot = async (kohde, asetukset) => {
+            assert.equal(kohde, url);
+            assert.equal(asetukset.lista, true);
+            return { title: "old", entries: kappaleet };
+        };
+        const i = y.interaktio();
+        delete i.options;
+        i.customId = "km:submit:linkki:";
+        i.isModalSubmit = () => true;
+        i.fields = { getTextInputValue: () => ` [${url}](${url}) ` };
+        await require("../utils/musiikki/yhteiso/library").handle(i);
+        const s = y.soitinModuuli.haeSoitin("g1");
+        assert.equal(i.deferCalls, 1);
+        assert.deepEqual([s.nyt.url, ...s.jono.map(k => k.url)], kappaleet.map(k => k.url));
+        assert.match(i.vastaukset.at(-1).v.embeds[0].data.title, /Soittolista/);
+    } finally { y.siivoa(); }
+});
+
 komentoTesti("soita ei yhdistä vanhalle kanavalle käyttäjän poistuessa haun aikana", async () => {
     const y = komentoYmparisto();
     try {

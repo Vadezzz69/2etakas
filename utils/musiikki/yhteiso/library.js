@@ -191,10 +191,11 @@ async function handle(i) {
     }
     if (action==="submit" && ["haku","linkki"].includes(a)) {
         const value=i.fields.getTextInputValue("value");
-        if (a!=="linkki" || /^https?:\/\//i.test(value)) {
-            return require("../../../commands/musiikki/soita").execute(i,{ haku:value });
+        const url = a === "linkki" ? require("../lahteet").jasennaUrl(value) : null;
+        if (a === "linkki" && !url) {
+            return execute(i,()=>{throw new Notice("Anna kappaleen tai soittolistan linkki.");});
         }
-        return execute(i,()=>{throw new Notice("Anna http- tai https-linkki.");});
+        return require("../../../commands/musiikki/soita").execute(i,{ haku:url?.href ?? value });
     }
     const active=["panelctl","skipvote"].includes(action) ? haeSoitin(i.guildId) : null;
     const expected=active && { s:active, sarja:active.sarja, paused:active.nytTiedot().tauolla };
