@@ -38,8 +38,10 @@ const dbMock={
   run:async()=>({changes:1,lastID:1,meta:{changes:1}}),
   get:async()=>MODE==="empty"?undefined:rowFor(0),
   all:async()=>MODE==="empty"?[]:rows(),
+  batch:async statements=>statements.map(()=>({results:[],meta:{changes:0}})),
 };
 const dbPath=path.join(proj,"utils","db.js");
+const ytdlpPath=path.join(proj,"utils","musiikki","ytdlp.js");
 
 // jaettu Proxy discord-olioille
 function mock(name="mock",extra={}){
@@ -172,6 +174,7 @@ Module._load=function(req,parent,isMain){
   let res;
   try{res=Module._resolveFilename(req,parent)}catch(e){return origLoad.apply(this,arguments)}
   if(res===dbPath)return dbMock;
+  if(res===ytdlpPath)return {...origLoad.apply(this,arguments),tiedot:async()=>{throw new Error("YTDLP_PUUTTUU");}};
   return origLoad.apply(this,arguments);
 };
 global.fetch=async()=>({ok:true,status:200,json:async()=>({url:"https://i.redd.it/x.png",title:"meemi",postLink:"https://redd.it/x",subreddit:"memes",nsfw:false,spoiler:false,ups:5,memes:[{url:"https://i.redd.it/x.png",title:"meemi",postLink:"https://redd.it/x",subreddit:"memes",nsfw:false,spoiler:false,ups:5}]}),text:async()=>"x",headers:{get:()=>"image/png"}});

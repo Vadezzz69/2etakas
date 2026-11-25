@@ -24,12 +24,21 @@ const ytdlp = require("../utils/musiikki/ytdlp");
 
 class FeikkiSoitin extends EventEmitter {
     constructor() { super(); this.state = { status: "idle" }; this.toistettu = []; }
-    play(resurssi) { this.state = { status: "playing" }; this.toistettu.push(resurssi.metadata); this.resurssi = resurssi; }
-    stop() { if (this.state.status !== "idle") { this.state = { status: "idle" }; this.emit("idle"); } return true; }
-    pause() { this.state = { status: "paused" }; return true; }
-    unpause() { this.state = { status: "playing" }; return true; }
+    play(resurssi) {
+        const vanha = this.state;
+        this.state = { status: "playing", resource: resurssi };
+        this.toistettu.push(resurssi.metadata);
+        this.resurssi = resurssi;
+        this.emit("playing", vanha, this.state);
+    }
+    stop() { if (this.state.status !== "idle") { const vanha = this.state; this.state = { status: "idle" }; this.emit("idle", vanha, this.state); } return true; }
+    pause() { this.state = { ...this.state, status: "paused" }; return true; }
+    unpause() { this.state = { ...this.state, status: "playing" }; return true; }
     /** Simuloi että kappale soi loppuun asti. */
-    loppui() { this.stop(); }
+    loppui(kestoMs = (this.resurssi.metadata.kesto ?? 0) * 1000) {
+        this.resurssi.playbackDuration = kestoMs;
+        this.stop();
+    }
 }
 
 function feikkiAani() {
@@ -172,6 +181,20 @@ testi("yt-dlp:n metatietoprosessit ajetaan yksi kerrallaan ilman stream-rajoitus
     assert.equal(aktiivisia, 0);
 });
 
+testi("yt-dlp rajaa odottavat metatietopyynnöt ja vapauttaa jonon ruuhkan jälkeen", async () => {
+    let vapauta;
+    const active = ytdlp.suoritaMetatietoJonossa(() => new Promise(resolve => { vapauta = resolve; }));
+    const waiting = Array.from({ length: 16 }, (_, i) => ytdlp.suoritaMetatietoJonossa(() => i));
+    try {
+        await assert.rejects(ytdlp.suoritaMetatietoJonossa(() => assert.fail("Ruuhkapyyntö käynnistyi")), /YTDLP_AIKAKATKAISU/);
+    } finally {
+        vapauta();
+        await active;
+    }
+    assert.deepEqual(await Promise.all(waiting), Array.from({ length: 16 }, (_, i) => i));
+    assert.equal(await ytdlp.suoritaMetatietoJonossa(() => "vapaa"), "vapaa");
+});
+
 // ---------------------------------------------------------------------------
 // Soitin
 // ---------------------------------------------------------------------------
@@ -287,7 +310,7 @@ testi("soittimen virheilmoitus ohittaa kappaleen", async () => {
     const { s, soitin, tapahtumat } = luo();
     s.lisaa([k("a"), k("b")]);
     await aika(5);
-    soitin.emit("error", new Error("rikki"));
+    soitin.emit("error", Object.assign(new Error("rikki"), { resource: soitin.resurssi }));
     await aika(5);
     assert.equal(tapahtumat.filter(t => t.tyyppi === "virhe").length, 1);
     assert.deepEqual(soitin.toistettu.map(x => x.otsikko), ["a", "b"]);
@@ -327,155 +350,28 @@ testi("YouTube-äänivirhe ei vaihda lähdettä SoundCloudiin vaan ilmoittaa vir
     assert.equal(soitin.toistettu.length, 0);
 });
 
-testi("SoundCloudin ensimmäisen tuloksen DRM-virhe siirtyy seuraavaan tulokseen", async () => {
-    const soundCloud2 = k("Biisi 2", {
+testi("SoundCloudin DRM-virhe siirtyy alkuperäiseen jonoon valitsematta toista hakutulosta", async () => {
+    const vaihtoehto = k("Väärä kappale", { url: "https://soundcloud.com/artist/wrong" });
+    const valittu = k("Valittu", {
+        url: "https://soundcloud.com/artist/selected",
         lahde: "SoundCloud",
-        hakulahde: "soundcloud",
-        url: "https://soundcloud.com/testi/biisi-2"
+        varatoistonEhdokkaat: [vaihtoehto]
     });
-    const soundCloud1 = k("Biisi 1", {
-        lahde: "SoundCloud",
-        hakulahde: "soundcloud",
-        url: "https://soundcloud.com/testi/biisi-1",
-        varatoistonEhdokkaat: [soundCloud2]
-    });
+    const seuraava = k("Seuraava");
     const yritykset = [];
-    const lokit = [];
-    const alkuperainenInfo = console.info;
-    const alkuperainenWarn = console.warn;
     const { s, soitin, tapahtumat } = luo({
         luoVirta: async kappale => {
             yritykset.push(kappale.url);
-            if (kappale.url === soundCloud1.url) {
-                throw ytdlp.luoYtdlpVirhe({
-                    vaihe: "stream-process-exit",
-                    exitCode: 1,
-                    stderr: "ERROR: [soundcloud] track-id: This video is DRM protected"
-                });
-            }
-            return { stream: new PassThrough(), tavuja: () => 100, virhe: () => "", sulje: () => {} };
+            if (kappale === valittu) throw ytdlp.luoYtdlpVirhe({ stderr: "This video is DRM protected" });
+            return feikkiVirrat().luoVirta(kappale);
         }
     });
-    console.info = (...args) => lokit.push(args.join(" "));
-    console.warn = (...args) => lokit.push(args.join(" "));
-
-    try {
-        s.lisaa([soundCloud1]);
-        await aika(10);
-
-        assert.deepEqual(yritykset, [
-            soundCloud1.url,
-            soundCloud2.url
-        ]);
-        assert.strictEqual(s.nyt, soundCloud2);
-        assert.deepEqual(soitin.toistettu.map(kappale => kappale.url), [soundCloud2.url]);
-        assert.equal(s.jono.length, 0, "varavaihtoehtoja ei lisätä jonoon");
-        assert.equal(tapahtumat.filter(tapahtuma => tapahtuma.tyyppi === "virhe").length, 0);
-
-        const yrityslokit = lokit
-            .filter(rivi => rivi.includes('"vaihe":"aanivirta-yritys"') || rivi.includes('"vaihe":"soundcloud-yritys"'))
-            .map(rivi => JSON.parse(rivi.slice(rivi.indexOf("{"))));
-        assert.deepEqual(yrityslokit.map(rivi => rivi.yritys), [1, 2]);
-        assert.equal(yrityslokit[0].virheluokka, "drm-suojattu");
-        assert.equal(yrityslokit[1].virheluokka, null);
-        assert.ok(yrityslokit.every(rivi => rivi.kappaleTunniste));
-        assert.equal(lokit.join("\n").includes(soundCloud1.url), false);
-    } finally {
-        console.info = alkuperainenInfo;
-        console.warn = alkuperainenWarn;
-    }
-});
-
-testi("SoundCloudin DRM-virhe kesken virran käyttää seuraavaa hakutulosta", async () => {
-    const soundCloud1 = k("Suojattu", {
-        lahde: "SoundCloud",
-        hakulahde: "soundcloud",
-        url: "https://soundcloud.com/testi/suojattu",
-        varatoistonEhdokkaat: [k("Toimiva", {
-            lahde: "SoundCloud",
-            hakulahde: "soundcloud",
-            url: "https://soundcloud.com/testi/toimiva"
-        })]
-    });
-    const { s, soitin } = luo({
-        luoVirta: async kappale => ({
-            stream: new PassThrough(),
-            tavuja: () => 10,
-            virhe: () => kappale.url === soundCloud1.url
-                ? "ERROR: [soundcloud] track-id: This video is DRM protected"
-                : "",
-            sulje: () => {}
-        })
-    });
-
-    s.lisaa([soundCloud1]);
+    s.lisaa([valittu, seuraava]);
     await aika(5);
-    soitin.emit("error", new Error("YTDLP_VIRHE"));
-    await aika(10);
-
-    assert.equal(s.nyt.url, "https://soundcloud.com/testi/toimiva");
-    assert.equal(soitin.toistettu.at(-1).url, s.nyt.url);
-    assert.equal(s.jono.length, 0);
-});
-
-testi("SoundCloudin DRM-virheet yrittävät enintään viisi eri tulosta ja ilmoittavat loppumisesta", async () => {
-    const kappaleet = Array.from({ length: 5 }, (_, i) => k(`SoundCloud ${i + 1}`, {
-        lahde: "SoundCloud",
-        hakulahde: "soundcloud",
-        url: `https://soundcloud.com/testi/track-${i + 1}`
-    }));
-    const yritykset = [];
-    const { s, tapahtumat } = luo({
-        luoVirta: async kappale => {
-            yritykset.push(kappale.url);
-            throw ytdlp.luoYtdlpVirhe({
-                vaihe: "stream-process-exit",
-                exitCode: 1,
-                stderr: "ERROR: [soundcloud] track-id: This video is DRM protected"
-            });
-        }
-    });
-
-    s.lisaa([{
-        ...kappaleet[0],
-        varatoistonEhdokkaat: [...kappaleet.slice(1), kappaleet[1]]
-    }]);
-    await aika(10);
-
-    const virhe = tapahtumat.find(tapahtuma => tapahtuma.tyyppi === "virhe");
-    assert.equal(yritykset.length, 5);
-    assert.equal(new Set(yritykset).size, 5, "sama URL yritetään vain kerran");
-    assert.equal(virhe.viesti, "SoundCloud-tulosten äänivirtojen avaaminen epäonnistui. Kokeile toista hakua tai lähdettä.");
-    assert.equal(s.nyt, null);
-    assert.equal(s.jono.length, 0);
-});
-
-testi("SoundCloudin verkkovirhe ei hylkää muita tuloksia summittaisesti", async () => {
-    const yritykset = [];
-    const toinen = k("Toinen", {
-        lahde: "SoundCloud",
-        hakulahde: "soundcloud",
-        url: "https://soundcloud.com/testi/toinen"
-    });
-    const { s, tapahtumat } = luo({
-        luoVirta: async kappale => {
-            yritykset.push(kappale.url);
-            throw ytdlp.luoYtdlpVirhe({ stderr: "Unable to download webpage: Connection reset" });
-        }
-    });
-
-    s.lisaa([k("Ensimmäinen", {
-        lahde: "SoundCloud",
-        hakulahde: "soundcloud",
-        url: "https://soundcloud.com/testi/ensimmainen",
-        varatoistonEhdokkaat: [toinen]
-    })]);
-    await aika(10);
-
-    assert.equal(yritykset.length, 1);
-    assert.equal(tapahtumat.filter(tapahtuma => tapahtuma.tyyppi === "virhe").length, 1);
-    assert.equal(s.nyt, null);
-    assert.equal(s.jono.length, 0);
+    assert.deepEqual(yritykset, [valittu.url, seuraava.url]);
+    assert.deepEqual(soitin.toistettu, [seuraava]);
+    assert.match(tapahtumat.find(t => t.tyyppi === "virhe").viesti, /DRM/);
+    s.lopeta();
 });
 
 testi("kesken YouTube-äänivirran tuleva virhe raportoidaan ilman lähteen vaihtoa", async () => {
@@ -495,7 +391,7 @@ testi("kesken YouTube-äänivirran tuleva virhe raportoidaan ilman lähteen vaih
     });
     s.lisaa([ytKappale]);
     await aika(5);
-    soitin.emit("error", ytdlp.luoYtdlpVirhe({ stderr: "Sign in to confirm you’re not a bot" }));
+    soitin.emit("error", Object.assign(ytdlp.luoYtdlpVirhe({ stderr: "Sign in to confirm you’re not a bot" }), { resource: soitin.resurssi }));
     await aika(10);
 
     assert.equal(s.nyt, null);
@@ -584,46 +480,83 @@ testi("yksityinen tai poistettu YouTube-linkki antaa selkeän virheilmoituksen",
     }
 });
 
-testi("SoundCloudin 30 sekunnin esikatselu (preview) hylätään suodatuksessa ja soittimessa", async () => {
-    const normaali = lahteet.ytdlpKappale({
-        title: "Kokonainen biisi",
-        webpage_url: "https://soundcloud.com/artist/full",
-        duration: 210,
-        extractor_key: "Soundcloud"
+testi("SoundCloud-esikatselu tunnistetaan metatiedoista ja aidot lyhyet kappaleet hyväksytään", () => {
+    const muunna = (title, duration, lisa = {}) => lahteet.ytdlpKappale({
+        title, duration, webpage_url: "https://soundcloud.com/artist/track", ...lisa
     }, { hakulahde: "soundcloud" });
+    const lyhyt = muunna("Aito 15 sekuntia", 15);
+    const otsikkoPreview = muunna("30s Preview", 30);
+    const snip = muunna("SNIP", 30, { policy: "SNIP" });
+    const lyhennetty = muunna("Lyhennetty", 30, { full_duration: 200 });
+    const previewFormaatti = { format_id: "http_mp3_preview", acodec: "mp3" };
+    const formaatti = muunna("Vain esikatselu", 210, { formats: [previewFormaatti] });
+    const taysi = muunna("Kokonainen", 210, { formats: [previewFormaatti, { format_id: "http_mp3" }] });
+    const youtube = muunna("Preview", 20, {
+        webpage_url: "https://www.youtube.com/watch?v=preview",
+        policy: "SNIP"
+    });
+    const { kelvolliset, hylatty } = lahteet.suodata([
+        lyhyt, otsikkoPreview, snip, lyhennetty, formaatti, taysi, youtube
+    ], ASETUKSET);
+    assert.deepEqual(kelvolliset, [lyhyt, otsikkoPreview, taysi, youtube]);
+    assert.equal(hylatty, 3);
+});
 
-    const snipPreview = lahteet.ytdlpKappale({
-        title: "Snip Preview",
-        webpage_url: "https://soundcloud.com/artist/snip",
-        duration: 30,
-        full_duration: 210,
-        policy: "SNIP",
-        extractor_key: "Soundcloud"
-    }, { hakulahde: "soundcloud" });
+testi("ennenaikainen Idle ja saman resurssin myöhäinen error siirtävät jonoa kerran", async () => {
+    const { s, soitin, tapahtumat, loki } = luo();
+    s.lisaa([k("a"), k("b"), k("c")]);
+    await aika(5);
+    const vanhaTila = soitin.state;
+    soitin.loppui(12000);
+    soitin.emit("error", Object.assign(new Error("myöhäinen virhe"), { resource: vanhaTila.resource }));
+    await aika(5);
+    soitin.emit("idle", vanhaTila);
+    vanhaTila.resource.stream.emit("error", new Error("vanha äänivirta"));
+    assert.deepEqual(soitin.toistettu.map(k => k.otsikko), ["a", "b"]);
+    assert.deepEqual(s.jono.map(k => k.otsikko), ["c"]);
+    assert.equal(loki.suljettu, 1);
+    const virheet = tapahtumat.filter(t => t.tyyppi === "virhe");
+    assert.equal(virheet.length, 1);
+    assert.match(virheet[0].viesti, /katkesi/);
+    soitin.loppui();
+    await aika(5);
+    assert.deepEqual(soitin.toistettu.map(k => k.otsikko), ["a", "b", "c"]);
+    assert.equal(tapahtumat.filter(t => t.tyyppi === "virhe").length, 1);
+    s.lopeta();
+});
 
-    const lyhytPreview = lahteet.ytdlpKappale({
-        title: "30s Preview",
-        webpage_url: "https://soundcloud.com/artist/short",
-        duration: 30,
-        extractor_key: "Soundcloud"
-    }, { hakulahde: "soundcloud" });
+testi("äänivirran prosessivirhe jatkaa seuraavaan ilman ylimääräistä ohitusta", async () => {
+    const { s, soitin, tapahtumat } = luo();
+    s.lisaa([k("a"), k("b"), k("c")]);
+    await aika(5);
+    const vanha = soitin.state;
+    const err = ytdlp.luoYtdlpVirhe({ stderr: "HTTP Error 429: Too Many Requests", exitCode: 1 });
+    vanha.resource.stream.destroy(err);
+    await aika(5);
+    soitin.emit("idle", vanha);
+    assert.equal(s.nyt.otsikko, "b");
+    assert.deepEqual(s.jono.map(k => k.otsikko), ["c"]);
+    const virheet = tapahtumat.filter(t => t.tyyppi === "virhe");
+    assert.equal(virheet.length, 1);
+    assert.match(virheet[0].viesti, /rajoittaa pyyntöjen määrää/);
+    s.lopeta();
+});
 
-    assert.equal(normaali.esikatselu, false);
-    assert.equal(snipPreview.esikatselu, true);
-    assert.equal(lyhytPreview.esikatselu, true);
-
-    const suodatus = lahteet.suodata([normaali, snipPreview, lyhytPreview], ASETUKSET);
-    assert.equal(suodatus.kelvolliset.length, 1);
-    assert.equal(suodatus.kelvolliset[0].otsikko, "Kokonainen biisi");
-    assert.equal(suodatus.hylatty, 2);
-
-    const { s } = luo();
-    s.lisaa([{
-        ...normaali,
-        varatoistonEhdokkaat: [snipPreview, lyhytPreview]
-    }]);
-    await aika(10);
-    assert.equal(s.toistonVaravaihtoehdot.length, 0, "esikatseluita ei hyväksytä edes soittimen varavaihtoehdoiksi");
+testi("stop ja skip peruuttavat keskeneräiset äänivirrat", async () => {
+    const signaalit = [];
+    const { s, soitin } = luo({
+        luoVirta: (kappale, { signal }) => new Promise((resolve, reject) => {
+            signaalit.push(signal);
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        })
+    });
+    s.lisaa([k("a"), k("b"), k("c")]);
+    s.ohita();
+    assert.equal(signaalit[0].aborted, true);
+    s.lopeta();
+    assert.equal(signaalit[1].aborted, true);
+    await aika(5);
+    assert.deepEqual(soitin.toistettu, []);
 });
 
 testi("ääniresurssin luontivirhe sulkee virran ja soitto jatkuu seuraavasta", async () => {
@@ -644,11 +577,11 @@ testi("ääniresurssin luontivirhe sulkee virran ja soitto jatkuu seuraavasta", 
     assert.equal(s.nyt.otsikko, "b");
 });
 
-testi("yt-dlp:n puuttuminen tyhjentää jonon eikä yritä jokaista erikseen", async () => {
+testi("yt-dlp:n puuttuessa jokainen jonon kappale käsitellään", async () => {
     const { s, tapahtumat } = luo({ virrat: { heita: "YTDLP_PUUTTUU" } });
     s.lisaa([k("a"), k("b"), k("c")]);
     await aika(10);
-    assert.equal(tapahtumat.filter(t => t.tyyppi === "virhe").length, 1);
+    assert.deepEqual(tapahtumat.filter(t => t.tyyppi === "virhe").map(t => t.kappale.otsikko), ["a", "b", "c"]);
     assert.equal(s.jono.length, 0);
     assert.equal(s.nyt, null);
 });
@@ -725,8 +658,7 @@ testi("tyhjä jono poistuttaa soittimen ajastimella ja ilmoittaa siitä", async 
     soitin.loppui();
     await aika(80);
     assert.equal(s.lopetettu, true);
-    assert.equal(tapahtumat.at(-1).tyyppi, "poistu");
-    assert.equal(tapahtumat.at(-1).syy, "jono");
+    assert.equal(tapahtumat.find(t => t.tyyppi === "poistu").syy, "jono");
 });
 
 testi("yksin kanavalle jääminen poistuttaa ja paluu perii ajastimen", async () => {
@@ -736,7 +668,7 @@ testi("yksin kanavalle jääminen poistuttaa ja paluu perii ajastimen", async ()
     a.s.kanavaMuuttui(0);
     await aika(80);
     assert.equal(a.s.lopetettu, true);
-    assert.equal(a.tapahtumat.at(-1).syy, "yksin");
+    assert.equal(a.tapahtumat.find(t => t.tyyppi === "poistu").syy, "yksin");
 
     const b = luo();
     b.s.lisaa([k("a")]);
@@ -783,10 +715,62 @@ testi("jasennaUrl hyväksyy vain http(s) ja ohittaa tekstihaut", () => {
 testi("listalinkit tunnistetaan, yksittäiset kappaleet eivät", () => {
     const u = s => new URL(s);
     assert.equal(lahteet.onListaUrl(u("https://www.youtube.com/playlist?list=PL1")), true);
+    assert.equal(lahteet.onListaUrl(u("https://music.youtube.com/playlist?list=PL1")), true);
+    assert.equal(lahteet.onListaUrl(u("https://youtu.be/x?list=PL1")), false);
     assert.equal(lahteet.onListaUrl(u("https://www.youtube.com/watch?v=x&list=PL1")), false);
     assert.equal(lahteet.onListaUrl(u("https://soundcloud.com/a/sets/b")), true);
     assert.equal(lahteet.onListaUrl(u("https://soundcloud.com/a/track")), false);
     assert.equal(lahteet.onListaUrl(u("https://x.bandcamp.com/album/y")), true);
+});
+
+testi("listametadata säilyttää järjestyksen ja duplikaatit sekä ohittaa virheelliset merkinnät", async () => {
+    const alkuperainen = ytdlp.tiedot;
+    const a = { title: "A", url: "a", id: "a", ie_key: "Youtube" };
+    const b = { title: "B", url: "b", id: "b", ie_key: "Youtube" };
+    const linkki = "https://music.youtube.com/playlist?list=PL1";
+    ytdlp.tiedot = async (kohde, valinnat) => {
+        assert.equal(kohde, linkki);
+        assert.equal(valinnat.lista, true);
+        assert.equal(valinnat.max, 7);
+        assert.equal(valinnat.ohitaListavirheet, true);
+        return { title: "Harjoitus", entries: [
+            a, null, { ...b, availability: "private" }, a, b, { ...b, title: "[Deleted video]" }, a
+        ], playlist_count: 20 };
+    };
+    try {
+        const haku = await lahteet.haeKappaleet(linkki, { asetukset: { ...ASETUKSET, maxLista: 6 } });
+        assert.deepEqual(haku.kappaleet.map(k => k.otsikko), ["A", "A", "B"]);
+        assert.deepEqual(haku.kappaleet.map(k => k.url), [
+            "https://www.youtube.com/watch?v=a", "https://www.youtube.com/watch?v=a", "https://www.youtube.com/watch?v=b"
+        ]);
+        assert.deepEqual(haku.lista, { nimi: "Harjoitus", loydetty: 20, maararaja: 6, maaraVahintaan: false });
+        assert.equal(haku.hylatty, 17);
+    } finally {
+        ytdlp.tiedot = alkuperainen;
+    }
+});
+
+testi("tyhjä, yksityinen ja video-plus-lista-linkki käsitellään erikseen", async () => {
+    const alkuperainen = ytdlp.tiedot;
+    const lista = "https://www.youtube.com/playlist?list=PL1";
+    const video = "https://www.youtube.com/watch?v=a&list=PL1";
+    const hae = url => lahteet.haeKappaleet(url, { asetukset: ASETUKSET });
+    try {
+        ytdlp.tiedot = async () => ({ title: "Tyhjä", entries: [] });
+        assert.deepEqual((await hae(lista)).kappaleet, []);
+        ytdlp.tiedot = async () => { throw ytdlp.luoYtdlpVirhe({ stderr: "This playlist is private" }); };
+        await assert.rejects(() => hae(lista), /yksityinen/);
+        ytdlp.tiedot = async (kohde, valinnat) => {
+            assert.equal(kohde, video);
+            assert.equal(valinnat.lista, false);
+            return { title: "Yksittäinen", webpage_url: "https://www.youtube.com/watch?v=a" };
+        };
+        const haku = await hae(video);
+        assert.equal(haku.lista, undefined);
+        assert.equal(haku.kappaleet[0].url, video);
+    } finally {
+        ytdlp.tiedot = alkuperainen;
+    }
 });
 
 testi("Spotify-upotuksen JSON:sta poimitaan kappaleet kahdella eri rakenteella ja duplikaatit poistuvat", () => {
@@ -1217,93 +1201,17 @@ testi("suoran linkin tarkoitukselliset pääsyrajoitukset estävät SoundCloud-k
     }
 });
 
-testi("suoran YouTube-linkin metatietojen kirjautumisvirhe varmistetaan SoundCloud-haulla", async () => {
+testi("suora YouTube-linkki säilyttää lähteen myös kirjautumisvirheessä ja nimivihjeellä", async () => {
     const alkuperainen = ytdlp.tiedot;
     const kutsut = [];
+    const url = "https://www.youtube.com/watch?v=video&artist=Artist&title=Song";
     ytdlp.tiedot = async kohde => {
         kutsut.push(kohde);
-        if (kohde.startsWith("https://")) {
-            throw Object.assign(new Error("YTDLP_VIRHE"), {
-                stderr: "Sign in to confirm you’re not a bot"
-            });
-        }
-        return {
-            entries: [{
-                title: "Kappale",
-                artist: "Testi",
-                permalink_url: "https://soundcloud.com/testi/loytynyt",
-                extractor_key: "Soundcloud"
-            }]
-        };
+        throw ytdlp.luoYtdlpVirhe({ stderr: "Sign in to confirm you're not a bot" });
     };
-
     try {
-        const syote = "https://www.youtube.com/watch?v=video123&artist=Testi&title=Kappale";
-        const tulos = await lahteet.haeKappaleet(syote, {
-            pyytaja: "u",
-            asetukset: ASETUKSET
-        });
-        assert.deepEqual(kutsut, [syote, "scsearch5:Testi Kappale"]);
-        assert.equal(tulos.lahde, "Soundcloud");
-        assert.equal(tulos.kappaleet[0].otsikko, "Kappale");
-        assert.equal(tulos.kappaleet[0].suoraSyote, false);
-        assert.equal(tulos.valittavat, true);
-    } finally {
-        ytdlp.tiedot = alkuperainen;
-    }
-});
-
-testi("suora YouTube-linkki ilman kappaleen nimeä ei hae SoundCloudia videon tunnisteella", async () => {
-    const alkuperainen = ytdlp.tiedot;
-    const kutsut = [];
-    ytdlp.tiedot = async kohde => {
-        kutsut.push(kohde);
-        throw Object.assign(new Error("YTDLP_VIRHE"), {
-            stderr: "Sign in to confirm you’re not a bot"
-        });
-    };
-
-    try {
-        await assert.rejects(
-            () => lahteet.haeKappaleet("https://www.youtube.com/watch?v=video123", {
-                pyytaja: "u",
-                asetukset: ASETUKSET
-            }),
-            /SoundCloud-varahaku tarvitsee kappaleen nimen/
-        );
-        assert.deepEqual(kutsut, ["https://www.youtube.com/watch?v=video123"]);
-        assert.equal(kutsut.some(kohde => kohde.startsWith("scsearch5:")), false);
-    } finally {
-        ytdlp.tiedot = alkuperainen;
-    }
-});
-
-testi("suoran YouTube-linkin tyhjä SoundCloud-tulos ilmoittaa, ettei kappaletta löytynyt", async () => {
-    const alkuperainen = ytdlp.tiedot;
-    const kutsut = [];
-    ytdlp.tiedot = async kohde => {
-        kutsut.push(kohde);
-        if (kohde.startsWith("https://")) {
-            throw Object.assign(new Error("YTDLP_VIRHE"), {
-                stderr: "Sign in to confirm you’re not a bot"
-            });
-        }
-        return { entries: [] };
-    };
-
-    try {
-        await assert.rejects(
-            () => lahteet.haeKappaleet("https://www.youtube.com/watch?v=id&artist=Artist&title=Song", {
-                pyytaja: "u",
-                asetukset: ASETUKSET
-            }),
-            /eikä vastaavaa kappaletta löytynyt SoundCloudista/
-        );
-        assert.deepEqual(kutsut, [
-            "https://www.youtube.com/watch?v=id&artist=Artist&title=Song",
-            "scsearch5:Artist Song",
-            "scsearch5:song artist"
-        ]);
+        await assert.rejects(() => lahteet.haeKappaleet(url, { asetukset: ASETUKSET }), /kirjautumisvaatimus/);
+        assert.deepEqual(kutsut, [url]);
     } finally {
         ytdlp.tiedot = alkuperainen;
     }
@@ -1448,7 +1356,7 @@ testi("suoran linkin yt-dlp-virhe ilman kappaleen nimeä ilmoitetaan turvallises
         await assert.rejects(
             () => lahteet.haeKappaleet("https://www.youtube.com/watch?v=video-id", { pyytaja: "u", asetukset: ASETUKSET }),
             err => {
-                assert.match(err.message, /SoundCloud-varahaku tarvitsee kappaleen nimen/);
+                assert.match(err.message, /Kappaleen tietoja ei saatu haettua/);
                 return true;
             }
         );
@@ -1598,7 +1506,7 @@ function komentoYmparisto() {
                     const kerain = new EventEmitter();
                     setImmediate(() => {
                         const viimeisin = vastaukset.filter(v => v.tyyppi === "editReply").at(-1)?.v;
-                        const komponentti = viimeisin?.components?.[0]?.components?.[0];
+                        const komponentti = viimeisin?.components?.[valinnat.peruuta ? 1 : 0]?.components?.[0];
                         const valinta = {
                             customId: komponentti?.data?.custom_id,
                             values: [String(valinnat.valinta ?? 0)],
@@ -1629,7 +1537,262 @@ function komentoYmparisto() {
     return { aani, lahetetyt, interaktio, komento, siivoa, soitinModuuli };
 }
 
-const teksti = v => (typeof v === "string" ? v : v?.content ?? "");
+const teksti = v => (typeof v === "string" ? v : v?.content ?? v?.embeds?.[0]?.data?.description ?? "");
+
+function painikkeet(nakyma) {
+    return nakyma.components.flatMap(rivi => rivi.components.map(osa => osa.toJSON()));
+}
+
+komentoTesti("soita ei yhdistä vanhalle kanavalle käyttäjän poistuessa haun aikana", async () => {
+    const y = komentoYmparisto();
+    try {
+        const i = y.interaktio({ valinnat: { haku: "Artist Song" } });
+        const cache = new Map([[i.user.id,{channelId:"vc1"}]]);
+        i.guild.voiceStates = { cache };
+        ytdlp.tiedot = async () => {
+            cache.clear();
+            return { entries: [{ title:"Song",artist:"Artist",webpage_url:"https://youtu.be/song" }] };
+        };
+        await y.komento("soita").execute(i);
+        assert.equal(y.soitinModuuli.haeSoitin("g1"), null);
+        assert.match(teksti(i.vastaukset.at(-1).v), /Äänikanava vaihtui/);
+    } finally { y.siivoa(); }
+});
+
+komentoTesti("pysyvän paneelin ohitus ei kohdistu kuittauksen aikana vaihtuneeseen soittimeen", async () => {
+    const y = komentoYmparisto();
+    const { handle } = require("../utils/musiikki/yhteiso/library");
+    try {
+        const soita = y.komento("soita");
+        await soita.execute(y.interaktio({ valinnat: { haku: "ensimmäinen" } }));
+        const vanha = y.soitinModuuli.haeSoitin("g1");
+        const i = y.interaktio();
+        i.customId = "km:panelctl:ohita";
+        const defer = i.deferReply;
+        i.deferReply = async () => {
+            await defer();
+            vanha.lopeta();
+            await soita.execute(y.interaktio({ valinnat: { haku: "toinen" } }));
+        };
+        await handle(i);
+        assert.match(y.soitinModuuli.haeSoitin("g1").nyt.otsikko, /toinen/);
+        assert.match(teksti(i.vastaukset.at(-1).v), /vaihtua/);
+    } finally { y.siivoa(); }
+});
+
+komentoTesti("soitinnäkymä käsittelee pitkät nimet, tuntemattoman keston ja puuttuvan kuvan", async () => {
+    const UI = require("../utils/musiikki/muotoilu");
+    const { s } = luo({ asetukset: { maxJono: 20 } });
+    const kappale = k("*".repeat(4000), { url: "https://soundcloud.com/example/song", kesto: null });
+    s.lisaa([kappale, ...Array(12).fill(kappale)]);
+    await aika(5);
+    const nakyma = UI.soitinNakyma(s);
+    const embed = nakyma.embeds[0].toJSON();
+    assert.match(embed.description, /tuntematon/);
+    assert.match(embed.description, /https:\/\/soundcloud/);
+    assert.equal(embed.thumbnail, undefined);
+    assert.match(embed.fields.find(kentta => kentta.name === "Äänenvoimakkuus").value, /100/);
+    assert.equal(nakyma.components.length, 2);
+    assert.equal(painikkeet(nakyma).length, 7);
+    assert.ok(painikkeet(nakyma).some(p => p.label === "Suosikki" && p.custom_id.startsWith("km:favorite:")));
+    assert.ok(painikkeet(nakyma).every(p => p.custom_id.length <= 100 && p.label.length <= 80));
+    const jono = UI.jonoNakyma(s).embeds[0].toJSON();
+    assert.ok(jono.description.length <= 4096);
+    assert.match(jono.footer.text, /1 \/ 2/);
+    s.lopeta();
+});
+
+komentoTesti("pysyvät musiikkipainikkeet tarkistavat kanavan, kappaleen ja soitinistunnon", async () => {
+    const y = komentoYmparisto();
+    const event = require("../events/interactionCreate");
+    let id = 0;
+    function painallus(painike, kanavaId = "vc1") {
+        const i = y.interaktio({ kanavaId });
+        return Object.assign(i, {
+            id: `musiikki-ui-${++id}`,
+            customId: painike.custom_id,
+            isButton: () => true,
+            deferUpdate: async () => { i.deferred = true; i.deferCalls++; },
+            update: async v => { i.replied = true; i.vastaukset.push({ v }); },
+            followUp: async v => { i.vastaukset.push({ v }); }
+        });
+    }
+    const UI = require("../utils/musiikki/muotoilu");
+    const aja = i => event.execute(i, {});
+    const etsi = (s, nimi) => painikkeet(UI.soitinNakyma(s)).find(p => p.label.startsWith(nimi));
+    try {
+        await y.komento("soita").execute(y.interaktio({ valinnat: { haku: "ensimmäinen" } }));
+        const s = y.soitinModuuli.haeSoitin("g1");
+        s.lisaa(Array.from({ length: 12 }, (_, i) => k(`jonorivi-${i + 1}`)));
+        await aika(5);
+
+        const vaarallaKanavalla = painallus(etsi(s, "Seuraava"), "vc2");
+        await aja(vaarallaKanavalla);
+        assert.match(teksti(vaarallaKanavalla.vastaukset[0].v), /äänikanavalle/);
+
+        const tauko = etsi(s, "Tauko");
+        await Promise.all([aja(painallus(tauko)), aja(painallus(tauko))]);
+        assert.equal(s.nytTiedot().tauolla, true);
+        await aja(painallus(etsi(s, "Jatka")));
+        assert.equal(s.nytTiedot().tauolla, false);
+
+        const avaa = painallus(etsi(s, "Näytä jono"), "vc2");
+        await aja(avaa);
+        const ensimmainen = avaa.vastaukset[0].v;
+        assert.match(ensimmainen.embeds[0].data.footer.text, /1 \/ 2/);
+        const sivuta = painallus(painikkeet(ensimmainen).find(p => p.label === "Seuraava"), "vc2");
+        await aja(sivuta);
+        assert.match(teksti(sivuta.vastaukset[0].v), /11\. .*jonorivi-11/);
+        assert.match(sivuta.vastaukset[0].v.embeds[0].data.footer.text, /2 \/ 2/);
+
+        const seuraava = etsi(s, "Seuraava");
+        await Promise.all([aja(painallus(seuraava)), aja(painallus(seuraava))]);
+        assert.equal(s.nyt.otsikko, "jonorivi-1");
+        assert.equal(s.jono.length, 11);
+        await aja(painallus(etsi(s, "Sekoita")));
+        assert.equal(new Set(s.jono).size, 11);
+        await aja(painallus(etsi(s, "Toisto")));
+        assert.equal(s.silmukka, "kappale");
+
+        const pysayta = etsi(s, "Pysäytä");
+        const stop = painallus(pysayta);
+        await aja(stop);
+        assert.deepEqual(stop.vastaukset.at(-1).v.components, []);
+        assert.equal(y.soitinModuuli.haeSoitin("g1"), null);
+        await y.komento("soita").execute(y.interaktio({ valinnat: { haku: "uusi" } }));
+        const uusi = y.soitinModuuli.haeSoitin("g1");
+        const vanha = painallus(pysayta);
+        await aja(vanha);
+        assert.match(teksti(vanha.vastaukset.at(-1).v), /vanhentuneet/);
+        assert.equal(y.soitinModuuli.haeSoitin("g1"), uusi);
+    } finally { y.siivoa(); }
+});
+
+komentoTesti("hakutuloksen valinta voidaan peruuttaa ja painikkeet poistuvat", async () => {
+    const y = komentoYmparisto();
+    try {
+        ytdlp.tiedot = async () => ({ entries: [
+            { title: "Song Original", artist: "Artist", webpage_url: "https://youtu.be/aaa", duration: 100 },
+            { title: "Song Remix", artist: "Artist", webpage_url: "https://youtu.be/bbb", duration: 180 }
+        ] });
+        const i = y.interaktio({ valinnat: { haku: "Artist Song", peruuta: true } });
+        await y.komento("soita").execute(i);
+        assert.equal(i.vastaukset[0].v.embeds[0].data.title, "Hakutulokset");
+        assert.equal(i.vastaukset.at(-1).v.embeds[0].data.title, "Haku peruutettu");
+        assert.deepEqual(i.vastaukset.at(-1).v.components, []);
+        assert.equal(y.soitinModuuli.haeSoitin("g1"), null);
+    } finally { y.siivoa(); }
+});
+
+komentoTesti("soitin käyttää samaa viestiä ja sietää poistetun paneelin", async () => {
+    const { liitaPaneeli } = require("../utils/musiikki/paneeli");
+    const { s } = luo();
+    const lahetetyt = [];
+    const muokkaukset = [];
+    let poistettu = false;
+    s.tekstikanava = {
+        send: async payload => {
+            lahetetyt.push(payload);
+            return {
+                id: String(lahetetyt.length),
+                edit: async payload => {
+                    if (poistettu) throw Object.assign(new Error("Unknown Message"), { code: 10008 });
+                    muokkaukset.push(payload);
+                }
+            };
+        }
+    };
+    const paneeli = liitaPaneeli(s);
+    s.ilmoita = paneeli;
+    try {
+        s.lisaa([k("A"), k("B")]);
+        await aika(5);
+        assert.equal(lahetetyt.length, 1);
+        assert.equal(s.paneeliViestiId(), "1");
+        s.ohita();
+        await aika(1230);
+        assert.equal(lahetetyt.length, 1);
+        assert.match(teksti(muokkaukset.at(-1)), /B/);
+
+        poistettu = true;
+        s.paivitaPaneeli();
+        await aika(1230);
+        assert.equal(s.paneeliViestiId(), undefined);
+        assert.equal(lahetetyt.length, 1);
+
+        poistettu = false;
+        s.paivitaPaneeli();
+        await aika(1230);
+        assert.equal(lahetetyt.length, 2);
+        assert.equal(s.paneeliViestiId(), "2");
+        s.lopeta();
+        await aika(1230);
+        assert.deepEqual(muokkaukset.at(-1).components, []);
+    } finally { s.lopeta(); }
+});
+
+komentoTesti("soittolistan virheet kootaan yhteen viestiin ja soitin aukeaa vasta toistossa", async () => {
+    const y = komentoYmparisto();
+    try {
+        ytdlp.tiedot = async () => ({
+            title: "Setti",
+            thumbnail: "https://example.com/kansi.jpg",
+            entries: Array.from({ length: 8 }, (_, i) => ({
+                title: `Kappale ${i + 1}`, url: `https://soundcloud.com/a/${i}`, duration: 60
+            }))
+        });
+        ytdlp.virta = async () => { throw ytdlp.luoYtdlpVirhe({ stderr: "Private track" }); };
+        const i = y.interaktio({ valinnat: { haku: "https://soundcloud.com/a/sets/b" } });
+        await y.komento("soita").execute(i);
+        const kuittaus = i.vastaukset[0].v;
+        assert.equal(kuittaus.embeds[0].data.thumbnail.url, "https://example.com/kansi.jpg");
+        assert.ok(kuittaus.embeds[0].data.fields.some(k => k.name === "Lisättyjen kesto" && k.value === "8:00"));
+        assert.equal(painikkeet(kuittaus)[0].label, "Näytä jono");
+        await aika(10);
+        assert.deepEqual(y.lahetetyt, []);
+        y.soitinModuuli.haeSoitin("g1").lopeta();
+        await aika(5);
+        assert.equal(y.lahetetyt.length, 1);
+        assert.match(y.lahetetyt[0].embeds[0].data.title, /8 kappaletta/);
+    } finally { y.siivoa(); }
+});
+
+komentoTesti("/soita lisää setin nykyiseen jonoon kerran ja avaa vain soivan virran", async () => {
+    const y = komentoYmparisto();
+    try {
+        const avatut = [];
+        const alkuperainen = ytdlp.virta;
+        ytdlp.virta = async url => { avatut.push(url); return alkuperainen(url); };
+        const soita = y.komento("soita");
+        await soita.execute(y.interaktio({ valinnat: { haku: "nykyinen" } }));
+        const kohde = "https://soundcloud.com/artist/sets/album";
+        const a = { title: "A", url: "https://soundcloud.com/artist/a", ie_key: "Soundcloud" };
+        const b = { title: "B", url: "https://soundcloud.com/artist/b", ie_key: "Soundcloud" };
+        ytdlp.tiedot = async (url, valinnat) => {
+            assert.equal(url, kohde);
+            assert.ok(valinnat.lista);
+            return { title: "Setti", entries: [a, a, b] };
+        };
+        const i = y.interaktio({ valinnat: { haku: kohde } });
+        i.id = "1000000000000";
+        await Promise.all([soita.execute(i), soita.execute({ ...i })]);
+        const s = y.soitinModuuli.haeSoitin("g1");
+        assert.equal(i.deferCalls, 1);
+        assert.match(s.nyt.otsikko, /nykyinen/);
+        assert.deepEqual(s.jono.map(k => k.url), [a.url, a.url, b.url]);
+        assert.equal(avatut.length, 1);
+        assert.equal(i.vastaukset.length, 1);
+        const embed = i.vastaukset[0].v.embeds[0].toJSON();
+        assert.equal(embed.title, "Soittolista lisätty jonoon");
+        assert.equal(embed.description, "Setti");
+        assert.deepEqual(embed.fields.map(k => k.value), ["SoundCloud", "3", "0", "4"]);
+        s.soitin.loppui();
+        await aika(5);
+        assert.deepEqual(avatut.slice(1), [a.url]);
+    } finally {
+        y.siivoa();
+    }
+});
 
 komentoTesti("/soita kuittaa interactionin ennen hakua", async () => {
     const y = komentoYmparisto();
@@ -1961,7 +2124,7 @@ komentoTesti("/soita näyttää hakutulokset ja soittaa käyttäjän valitseman 
     } finally { y.siivoa(); }
 });
 
-komentoTesti("/soita käyttää valitun SoundCloud-osuman jälkeen saman haun seuraavaa tulosta", async () => {
+komentoTesti("/soita ei korvaa valittua SoundCloud-osumaa toisella hakutuloksella", async () => {
     const y = komentoYmparisto();
     const alkuperainenTiedot = ytdlp.tiedot;
     const alkuperainenVirta = ytdlp.virta;
@@ -1992,19 +2155,16 @@ komentoTesti("/soita käyttää valitun SoundCloud-osuman jälkeen saman haun se
         await y.komento("soita").execute(i);
         await aika(15);
 
-        assert.deepEqual(yritykset, [
-            "https://soundcloud.com/artist/song-one",
-            "https://soundcloud.com/artist/song-two"
-        ]);
+        assert.deepEqual(yritykset, ["https://soundcloud.com/artist/song-one"]);
         const soitin = y.soitinModuuli.haeSoitin("g1");
-        assert.equal(soitin.nyt.url, yritykset[1]);
-        assert.equal(soitin.jono.length, 0, "vaihtoehto ei lisäänny jonoon uutena kappaleena");
+        assert.equal(soitin.nyt, null);
+        assert.equal(soitin.jono.length, 0);
         assert.equal(i.deferCalls, 1);
+        assert.ok(y.lahetetyt.some(v => /DRM/.test(v.embeds?.[0]?.data?.description ?? "")));
 
         ytdlp.tiedot = alkuperainenTiedot;
         await y.komento("soita").execute(y.interaktio({ valinnat: { haku: "seuraava kappale" } }));
-        assert.equal(soitin.jono.length, 1, "uusi kappale lisätään DRM-varatoiston jälkeen");
-        assert.match(soitin.jono[0].otsikko, /seuraava kappale/);
+        assert.match(soitin.nyt.otsikko, /seuraava kappale/);
     } finally {
         ytdlp.tiedot = alkuperainenTiedot;
         ytdlp.virta = alkuperainenVirta;
@@ -2193,7 +2353,8 @@ komentoTesti("jono, nyt, tauko, toisto, sekoita, ohita ja lopeta toimivat ketjun
         assert.equal(y.aani.yhteys.tuhottu, true);
 
         const tyhja = y.interaktio(); await y.komento("jono").execute(tyhja);
-        assert.equal(tyhja.vastaukset[0].v.ephemeral, true);
+        assert.match(teksti(tyhja.vastaukset[0].v), /jono on tyhjä/i);
+        assert.deepEqual(tyhja.vastaukset[0].v.components, []);
     } finally { y.siivoa(); }
 });
 

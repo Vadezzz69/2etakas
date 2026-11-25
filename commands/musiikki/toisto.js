@@ -1,6 +1,6 @@
 const { SlashCommandBuilder } = require("discord.js");
 const { valmisteleOhjaus } = require("../../utils/musiikki/ohjain");
-const { TOISTOTILAT } = require("../../utils/musiikki/viestit");
+const UI = require("../../utils/musiikki/muotoilu");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -19,12 +19,11 @@ module.exports = {
         ),
 
     async execute(interaction) {
-        await interaction.deferReply();
-
+        await interaction.deferReply({ ephemeral: true });
         const soitin = await valmisteleOhjaus(interaction);
         if (!soitin) return;
-
         const tila = soitin.toisto(interaction.options.getString("tila"));
-        await interaction.editReply(TOISTOTILAT[tila]);
+        soitin.paivitaPaneeli?.();
+        await interaction.editReply(UI.onnistui("Toistotila vaihdettu", UI.TOISTOTILAN_NIMET[tila]));
     }
 };

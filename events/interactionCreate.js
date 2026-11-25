@@ -1,4 +1,8 @@
 const { Events } = require("discord.js");
+const { route } = require("../utils/communityRouter");
+const { musiikkiPainike, kasittelePainike } = require("../utils/musiikki/paneeli");
+const { virhe: musiikkiVirhe } = require("../utils/musiikki/muotoilu");
+const MUSIIKKIKOMENNOT = new Set(["soita", "jono", "nyt", "ohita", "lopeta", "sekoita", "tauko", "toisto"]);
 const { kirjaaKomento } = require("../utils/tilastot");
 const { satunnainen } = require("../utils/satunnainen");
 const { VIRHEVIESTIT, VANHAT_KOMENNOT } = require("../utils/comedy/data/viestit");
@@ -32,13 +36,14 @@ function kirjaaInteractionAika(interaction, vaihe, tiedot = {}) {
  * vanhentunut tai komento ehti vastata ennen kaatumista).
  */
 async function ilmoitaVirhe(interaction, teksti) {
+    const vastaus = typeof teksti === "string" ? { content: teksti, embeds: [], components: [] } : teksti;
     try {
         if (interaction.deferred && !interaction.replied) {
-            await interaction.editReply({ content: teksti, embeds: [], components: [] });
+            await interaction.editReply(vastaus);
         } else if (interaction.replied) {
-            await interaction.followUp({ content: teksti, ephemeral: true });
+            await interaction.followUp({ ...vastaus, ephemeral: true });
         } else {
-            await interaction.reply({ content: teksti, ephemeral: true });
+            await interaction.reply({ ...vastaus, ephemeral: true });
         }
     } catch (err) {
         if (Number(err?.code) === 10062) {
@@ -56,7 +61,9 @@ module.exports = {
         const onSoita = interaction.commandName === "soita";
         if (onSoita) kirjaaInteractionAika(interaction, "interactionCreate-start", { saapuiMs });
 
-        if (!interaction.isChatInputCommand()) return;
+        const onMusiikkiPainike = musiikkiPainike(interaction);
+        const uusiToiminto = route(interaction);
+        if (!uusiToiminto && !onMusiikkiPainike && !interaction.isChatInputCommand()) return;
 
         const nyt = Date.now();
         for (const [id, aikaleima] of kasitellytInteraktiot) {
@@ -74,7 +81,19 @@ module.exports = {
             }));
             return;
         }
-        kasitellytInteraktiot.set(interaction.id, nyt);
+        if (interaction.id) kasitellytInteraktiot.set(interaction.id, nyt);
+        if (uusiToiminto || onMusiikkiPainike) {
+            try {
+                await (uusiToiminto ?? kasittelePainike)(interaction);
+            } catch (err) {
+                if ([10008, 10062, 40060, 50001, 50013].includes(Number(err?.code))) return;
+                console.warn("[musiikki-painike]", err?.name, err?.code);
+                if (!interaction.deferred && !interaction.replied) {
+                    await ilmoitaVirhe(interaction, musiikkiVirhe("Toiminto epäonnistui. Avaa soitin uudelleen komennolla /nyt."));
+                }
+            }
+            return;
+        }
 
         if (["soita", "meemi"].includes(interaction.commandName)) {
             console.info("[interaction-compare] " + JSON.stringify({
@@ -136,7 +155,10 @@ module.exports = {
                 console.warn("⚠️ Interaction vanheni ennen komennon valmistumista; virhevastausta ei yritetty uudelleen.");
                 return;
             }
-            return ilmoitaVirhe(interaction, satunnainen(VIRHEVIESTIT));
+            if (MUSIIKKIKOMENNOT.has(interaction.commandName) && Number(err?.code) === 40060) return;
+            return ilmoitaVirhe(interaction, MUSIIKKIKOMENNOT.has(interaction.commandName)
+                ? musiikkiVirhe("Toiminto epäonnistui. Yritä hetken päästä uudelleen.")
+                : satunnainen(VIRHEVIESTIT));
 
         }
 

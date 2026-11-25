@@ -1,7 +1,6 @@
 const { SlashCommandBuilder } = require("discord.js");
-const { satunnainen } = require("../../utils/satunnainen");
 const { valmisteleOhjaus } = require("../../utils/musiikki/ohjain");
-const { SEKOITETTU, JONO_TYHJA, tayta } = require("../../utils/musiikki/viestit");
+const UI = require("../../utils/musiikki/muotoilu");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -11,12 +10,11 @@ module.exports = {
     async execute(interaction) {
         const soitin = await valmisteleOhjaus(interaction);
         if (!soitin) return;
-
         if (soitin.jono.length < 2) {
-            return interaction.reply({ content: satunnainen(JONO_TYHJA), ephemeral: true });
+            return interaction.reply({ ...UI.virhe("Sekoittamiseen tarvitaan vähintään kaksi kappaletta jonossa."), ephemeral: true });
         }
-
         const maara = soitin.sekoita();
-        await interaction.reply(tayta(satunnainen(SEKOITETTU), { n: maara }));
+        soitin.paivitaPaneeli?.();
+        await interaction.reply({ ...UI.onnistui("Jono sekoitettu", `${maara} kappaletta.`), ephemeral: true });
     }
 };

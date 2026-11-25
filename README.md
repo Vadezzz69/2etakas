@@ -44,18 +44,32 @@ ja tallennettuja `!avainsana`-vastauksia (vaatii Message Content Intentin).
 
 Botti soittaa musiikkia äänikanavalla. Komennot: `/soita <haku tai linkki>`, `/jono`, `/nyt`,
 `/ohita`, `/tauko` (pysäytä/jatka), `/toisto` (pois / kappale / jono), `/sekoita`, `/lopeta`.
-`/soita` hakee oletuksena YouTubesta ja kokeilee SoundCloudia, jos YouTube-haku epäonnistuu tai ei löydä
-kelvollista tulosta. Jos YouTube-äänen suoratoiston käynnistys epäonnistuu, sama kappale etsitään
-SoundCloudista ilman ylimääräistä jonopaikkaa. Myös kesken toiston havaittu YouTube-virhe vaihtaa
-SoundCloudiin. Käyttäjä voi valita tuloslistasta enintään viidestä
-vaihtoehdosta; haku suosii pyytämätöntä remix-, cover- tai live-versiota vähemmän. Lähteen voi yhä
-valita komennon valinnaisesta `lahde`-asetuksesta, tai oletuksen voi vaihtaa `MUSIIKKI_HAKULAHDE`-asetuksella.
+`/soita` hakee nimellä oletuksena YouTubesta ja näyttää SoundCloudin tuloksia, jos YouTube-haku
+epäonnistuu tai jää tyhjäksi. Käyttäjä voi valita enintään viidestä hakutuloksesta. Lähteen voi valita
+`lahde`-asetuksella tai vaihtaa oletuksen `MUSIIKKI_HAKULAHDE`-asetuksella. Kun valittu kappale tai
+suora linkki epäonnistuu, botti kertoo syyn ja jatkaa jonossa.
+
+Anna komennon `haku`-kenttään esimerkiksi YouTuben tai YouTube Musicin `/playlist?list=…`-linkki
+tai SoundCloudin `/artisti/sets/nimi`-linkki. Jos YouTube-linkissä on sekä video että lista,
+botti soittaa videon. Listalle tarvitaan erillinen playlist-linkki. Soittolista lisätään nykyisen
+jonon loppuun alkuperäisessä järjestyksessä. `MUSIIKKI_MAX_LISTA` (oletus 100) rajaa käsiteltäviä
+kappaleita, ja `MUSIIKKI_MAX_JONO` rajaa jonoon mahtuvia kappaleita. Kukin äänivirta avataan
+soittovuorolla. Kevyestä listahausta puuttuvat saatavuustiedot selviävät silloin.
+
+`/nyt` näyttää soittimen ja `/jono` näyttää jonon kymmenen kappaleen sivuilla. Soittimesta voi
+tauottaa, ohittaa, pysäyttää, sekoittaa jonon ja vaihtaa toistotilaa samalla äänikanavalla.
+Soittimen viesti päivittyy toiston edetessä, ja soittolistojen toistovirheet kootaan yhteen viestiin.
+
+Komitea Musicin ja Cardsin uudet komennot, D1-migraatio ja paneelien käyttöönotto
+on kuvattu [käyttöönotto-ohjeessa](migrations/README.md).
 
 **Mistä soitetaan**
 
 | Lähde | Tuki |
 |---|---|
-| YouTube, SoundCloud, Bandcamp, Mixcloud, Vimeo | hakusanat, yksittäiset linkit ja soittolistat/albumit (`yt-dlp`) |
+| YouTube ja SoundCloud | Hakusanat, yksittäiset linkit ja soittolistat (`yt-dlp`) |
+| YouTube Music | Kappale- ja soittolistalinkit (`yt-dlp`) |
+| Bandcamp, Mixcloud, Vimeo | Kappalelinkit (`yt-dlp`). Bandcamp tukee myös albumilinkkejä. |
 | **Spotify** | kappale-, albumi- ja soittolistalinkit. **Spotifyn ääntä ei voi soittaa** (se on suojattu). Linkistä luetaan vain kappaleiden nimet, ja ääni haetaan nimellä YouTubesta tai SoundCloudista, joten joskus löytyy väärä versio |
 
 Linkit hyväksytään vain sallituilta sivustoilta (lisää omia: `MUSIIKKI_SALLITUT_SIVUT`). Se estää
@@ -86,11 +100,10 @@ käyttäjiä ohjaamasta palvelinta hakemaan mielivaltaisia osoitteita. Suorat l�
   ei voi kirjoittaa, käytetään järjestelmän temp-hakemistoa. Metatietohaun yt-dlp-prosessit ajetaan
   jonossa, mutta äänivirran käynnistystä ei rajoiteta. Ympäristötarkistus näyttää temp-hakemiston
   kirjoitettavuuden sekä saatavilla olevan levytilan ja tuettujen tiedostojärjestelmien inode-määrän.
-- YouTube voi estää haut palvelinten IP-osoitteilta ("kirjaudu sisään"). Silloin auttaa
-  asianmukaisesti hallittu evästetiedosto (`YTDLP_COOKIES`); haku ja äänen lataus kokeilevat
-  automaattisesti myös SoundCloudia. Jos suoran YouTube-linkin metatiedot estyvät, automaattinen
-  SoundCloud-haku vaatii syötteessä kappaleen nimen (ja mahdollisuuksien mukaan artistin); videon
-  tunnistetta ei käytetä hakusanana. Yksityisiä, poistettuja tai rajoitettuja suoria videoita ei korvata.
+- YouTube voi vaatia kirjautumista palvelimen IP-osoitteelta. Ajantasainen yt-dlp käyttää Node.js:ää
+  ja EJS-komponentteja YouTuben JavaScript-haasteisiin. Kirjautumiseen voi auttaa asianmukaisesti
+  hallittu evästetiedosto (`YTDLP_COOKIES`). Saatavuus riippuu myös YouTuben palvelinpaikalle
+  asettamista rajoituksista.
 - Hakulokit käyttävät tapahtumatunnistetta ja kirjaavat lähteen, vaiheen, keston sekä tulosmäärän.
   Hakusanoja, linkkejä, käyttäjä- tai palvelintunnisteita eikä yt-dlp:n raakavirheitä ei kirjoiteta niihin.
 - Videopalvelut voivat kieltää äänen irrottamisen käyttöehdoissaan. Käyttö on ylläpitäjän vastuulla.
@@ -116,7 +129,7 @@ ei verkkoa). Se ei testaa oikeaa äänen toistoa Discordissa.
    | `D1_API_URL` | kyllä | Cloudflare Worker -rajapinnan osoite |
    | `D1_API_KEY` | kyllä | Workerin `API_KEY`-salaisuus (Bearer) |
    | `DASHBOARD_PORT` / `PORT` | ei | Dashboardin portti (oletus 10000) |
-   | `DASHBOARD_TOKEN` | ei | Jos asetettu, dashboard vaatii tämän (`/?token=...`) |
+   | `DASHBOARD_TOKEN` | ei | Aseta, jos käytät dashboardia (`/?token=...`) |
 
    `BOT_SECRET` ei ole enää käytössä (ks. alla).
 
@@ -238,8 +251,8 @@ joten vapaatekstikentät tai `!add` eivät kelpaa massapingaukseen.
 
 Botti käynnistää samassa prosessissa web-dashboardin (`dashboard/`). Sen rajapinta
 näyttää palvelimen aktiivisuusdataa (käyttäjänimet, syyllisyysprosentit, epäillyt).
-**Aseta `DASHBOARD_TOKEN`, jos portti on näkyvissä internetiin** — ilman sitä kuka
-tahansa osoitteen tuntava näkee datan. Avaa token-suojattu dashboard kerran
+Aseta `DASHBOARD_TOKEN` ennen dashboardin käyttöä. Ilman asetusta juuripolku
+palauttaa hostin elossaolovastauksen ja tietonäkymät ovat suljettuja. Avaa dashboard kerran
 osoitteella `/?token=...` (token tallentuu HttpOnly-evästeeseen).
 
 ## Salaisuudet

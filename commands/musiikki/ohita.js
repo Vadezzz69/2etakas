@@ -1,8 +1,6 @@
 const { SlashCommandBuilder } = require("discord.js");
-const { satunnainen } = require("../../utils/satunnainen");
 const { valmisteleOhjaus } = require("../../utils/musiikki/ohjain");
-const { turvallinen } = require("../../utils/musiikki/muotoilu");
-const { OHITETTU, EI_SOI, tayta } = require("../../utils/musiikki/viestit");
+const UI = require("../../utils/musiikki/muotoilu");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -12,15 +10,10 @@ module.exports = {
     async execute(interaction) {
         const soitin = await valmisteleOhjaus(interaction);
         if (!soitin) return;
-
-        const ohitettu = soitin.ohita();
-        if (!ohitettu) {
-            return interaction.reply({ content: satunnainen(EI_SOI), ephemeral: true });
-        }
-
-        await interaction.reply({
-            content: tayta(satunnainen(OHITETTU), { otsikko: turvallinen(ohitettu.otsikko) }),
-            allowedMentions: { parse: [] }
-        });
+        const kappale = soitin.ohita();
+        if (!kappale) return interaction.reply({ ...UI.virhe("Ohitettavaa kappaletta ei ole."), ephemeral: true });
+        void require("../../utils/musiikki/yhteiso/store").activity(interaction.guildId,interaction.user.id,0,1).catch(()=>{});
+        soitin.paivitaPaneeli?.();
+        await interaction.reply({ ...UI.onnistui("Kappale ohitettu", UI.nimi(kappale)), ephemeral: true });
     }
 };

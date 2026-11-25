@@ -13,6 +13,7 @@ const JULKAISU_API_URL = "https://api.github.com/repos/yt-dlp/yt-dlp/releases/la
 const JSON_MAX_TAVUA = 20 * 1024 * 1024;
 const STDERR_MAX_MERKKIA = 500;
 const VIRTA_ALKU_AIKARAJA_MS = 30_000;
+const SC_PREVIEW_TUNNISTE = "_preview";
 const BINARI_MAX_TAVUA = 100 * 1024 * 1024;
 const METATIETO_MAX_RINNAKKAIN = 1;
 
@@ -20,7 +21,16 @@ let loydetty = null;
 let etsinta = null;
 let metatietoAktiivisia = 0;
 const metatietoJono = [];
+const METATIETO_JONORAJA = 16;
 const sha256Varmistukset = new Map();
+const aktiivisetProsessit = new Map();
+
+function suljeProsessit() {
+    for (const [pysayta, tmpDir] of aktiivisetProsessit) {
+        pysayta();
+        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* poistuminen jatkuu */ }
+    }
+}
 
 function sha256Manifestista(manifesti, tiedostonimi) {
     const escapet = tiedostonimi.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -102,7 +112,17 @@ function tarkistaTempHakemisto() {
 
 async function suoritaMetatietoJonossa(tehtava) {
     if (metatietoAktiivisia >= METATIETO_MAX_RINNAKKAIN) {
-        await new Promise(resolve => metatietoJono.push(resolve));
+        const timeout = () => new Error("YTDLP_AIKAKATKAISU");
+        if (metatietoJono.length >= METATIETO_JONORAJA) throw timeout();
+        await new Promise((resolve,reject) => {
+            const vuoro = () => { clearTimeout(ajastin); resolve(); };
+            const ajastin = setTimeout(() => {
+                const indeksi = metatietoJono.indexOf(vuoro);
+                if (indeksi !== -1) metatietoJono.splice(indeksi,1);
+                reject(timeout());
+            },30_000);
+            metatietoJono.push(vuoro);
+        });
     } else {
         metatietoAktiivisia++;
     }
@@ -223,10 +243,11 @@ function kaynnistaYtdlpProsessi(polku, args, options = {}) {
         TMP: tmpDir,
         TEMP: tmpDir
     };
+    const omaProsessiryhma = process.platform !== "win32";
     let proc;
 
     try {
-        proc = spawn(polku, args, { ...options, env });
+        proc = spawn(polku, args, { ...options, env, detached: omaProsessiryhma });
     } catch (err) {
         void fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(siivoamisvirhe => {
             console.warn("[ytdlp-temp-cleanup] " + JSON.stringify({ code: siivoamisvirhe?.code ?? null }));
@@ -234,20 +255,35 @@ function kaynnistaYtdlpProsessi(polku, args, options = {}) {
         throw err;
     }
 
+    let paattynyt = false;
+    const pysayta = () => {
+        if (!proc.pid || paattynyt) return;
+        try {
+            if (omaProsessiryhma) process.kill(-proc.pid, "SIGKILL");
+            else proc.kill("SIGKILL");
+        } catch (err) {
+            if (err.code !== "ESRCH") console.warn("[ytdlp-stop]", err.code ?? err.name);
+        }
+    };
+    aktiivisetProsessit.set(pysayta, tmpDir);
+
     let cleanupPromise;
     const cleanup = () => {
         if (!cleanupPromise) {
             cleanupPromise = fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(err => {
                 console.warn("[ytdlp-temp-cleanup] " + JSON.stringify({ code: err?.code ?? null }));
-            });
+            }).finally(() => aktiivisetProsessit.delete(pysayta));
         }
         return cleanupPromise;
     };
 
     proc.once("error", () => { void cleanup(); });
-    proc.once("close", () => { void cleanup(); });
+    proc.once("close", () => {
+        paattynyt = true;
+        void cleanup();
+    });
 
-    return { proc, tmpDir, cleanup };
+    return { proc, tmpDir, cleanup, pysayta };
 }
 
 function suoritaYtdlp(polku, args, { aikarajaMs = 15_000 } = {}) {
@@ -269,7 +305,7 @@ function suoritaYtdlp(polku, args, { aikarajaMs = 15_000 } = {}) {
         let valmis = false;
         const ajastin = setTimeout(() => {
             timedOut = true;
-            proc.kill("SIGKILL");
+            ytdlpProsessi.pysayta();
         }, aikarajaMs);
 
         const viimeistele = async (exitCode, error = null) => {
@@ -528,7 +564,7 @@ function lisaArgumentit() {
     return args;
 }
 
-async function tiedot(kohde, { lista = false, max = 1, aikarajaMs = 30000 } = {}) {
+async function tiedot(kohde, { lista = false, max = 1, aikarajaMs = 30000, ohitaListavirheet = false } = {}) {
     const bin = await loyda();
     if (!bin) throw new Error("YTDLP_PUUTTUU");
 
@@ -536,6 +572,7 @@ async function tiedot(kohde, { lista = false, max = 1, aikarajaMs = 30000 } = {}
         "--dump-single-json", "--skip-download", "--no-warnings", "--ignore-config",
         lista ? "--flat-playlist" : "--no-playlist",
         ...(lista ? ["--playlist-end", String(max)] : []),
+        ...(ohitaListavirheet ? ["--ignore-errors"] : []),
         ...lisaArgumentit(),
         "--", kohde
     ];
@@ -551,12 +588,12 @@ async function tiedot(kohde, { lista = false, max = 1, aikarajaMs = 30000 } = {}
 
         const ajastin = setTimeout(() => {
             aikakatkaistiin = true;
-            proc.kill("SIGKILL");
+            ytdlpProsessi.pysayta();
         }, aikarajaMs);
 
         proc.stdout.on("data", d => {
             koko += d.length;
-            if (koko > JSON_MAX_TAVUA) proc.kill("SIGKILL");
+            if (koko > JSON_MAX_TAVUA) ytdlpProsessi.pysayta();
             else osat.push(d);
         });
 
@@ -588,7 +625,7 @@ async function tiedot(kohde, { lista = false, max = 1, aikarajaMs = 30000 } = {}
                 }));
             }
 
-            if (koodi !== 0 || koko > JSON_MAX_TAVUA) {
+            if ((koodi !== 0 && !(ohitaListavirheet && koodi === 1 && koko)) || koko > JSON_MAX_TAVUA) {
                 const liianSuuri = koko > JSON_MAX_TAVUA;
                 return reject(luoYtdlpVirhe({
                     vaihe: liianSuuri ? "metadata-output-limit" : "metadata-process-exit",
@@ -599,7 +636,11 @@ async function tiedot(kohde, { lista = false, max = 1, aikarajaMs = 30000 } = {}
             }
 
             try {
-                resolve(JSON.parse(Buffer.concat(osat).toString("utf8")));
+                const data = JSON.parse(Buffer.concat(osat).toString("utf8"));
+                if (koodi !== 0 && !Array.isArray(data?.entries)) {
+                    return reject(luoYtdlpVirhe({ vaihe: "metadata-process-exit", exitCode: koodi, stderr: virheTeksti }));
+                }
+                resolve(data);
             } catch (err) {
                 reject(luoYtdlpVirhe({
                     vaihe: "metadata-json-parse",
@@ -613,13 +654,21 @@ async function tiedot(kohde, { lista = false, max = 1, aikarajaMs = 30000 } = {}
     }));
 }
 
-async function virta(kohde) {
+function onPreviewFormaatti(id) {
+    return String(id ?? "").endsWith(SC_PREVIEW_TUNNISTE);
+}
+
+async function virta(kohde, { signal, soundCloud = false } = {}) {
+    signal?.throwIfAborted();
     const bin = await loyda();
+    signal?.throwIfAborted();
     if (!bin) throw new Error("YTDLP_PUUTTUU");
 
+    const suodatin = soundCloud ? `[format_id!$=${SC_PREVIEW_TUNNISTE}]` : "";
     const args = [
-        "-f", "bestaudio/best", "--no-playlist", "--quiet",
+        "-f", `bestaudio${suodatin}/best${suodatin}`, "--no-playlist", "--quiet",
         "--no-warnings", "--ignore-config", "--no-part", "--no-cache-dir",
+        "--socket-timeout", "15",
         ...lisaArgumentit(),
         "-o", "-", "--", kohde
     ];
@@ -638,6 +687,21 @@ async function virta(kohde) {
             valmis(null, pala);
         }
     });
+
+    const peru = () => {
+        viimeisteleKaynnistys(signal.reason);
+        sulje();
+    };
+    const sulje = () => {
+        if (suljettu) return;
+        suljettu = true;
+        signal?.removeEventListener("abort", peru);
+        ytdlpProsessi.pysayta();
+        mitattuVirta.destroy();
+    };
+
+    // Virhe voi syntyä juuri ennen kuin kutsuja ehtii kytkeä oman kuuntelijansa.
+    mitattuVirta.on("error", () => {});
 
     // stdout ei saa päättää Transform-virtaa ennen kuin tiedämme yt-dlp:n
     // poistumiskoodin. Muuten myöhempi prosessivirhe jäisi soittimelta piiloon.
@@ -672,11 +736,7 @@ async function virta(kohde) {
                 stderr: virheTeksti,
                 syy: "yt-dlp ei aloittanut äänivirtaa aikarajan sisällä"
             });
-            try {
-                proc.kill("SIGKILL");
-            } catch {
-                // Prosessi on jo suljettu.
-            }
+            ytdlpProsessi.pysayta();
             viimeistele(virhe);
         }, VIRTA_ALKU_AIKARAJA_MS);
         ajastin.unref?.();
@@ -751,11 +811,13 @@ async function virta(kohde) {
         mitattuVirta.destroy(err);
     });
 
+    signal?.addEventListener("abort", peru, { once: true });
+    if (signal?.aborted) peru();
     try {
         await kaynnistys;
     } catch (err) {
-        suljettu = true;
-        mitattuVirta.destroy();
+        sulje();
+        if (signal?.aborted) throw signal.reason;
         if (err?.message === "YTDLP_VIRHE" || err?.message === "YTDLP_AIKAKATKAISU") throw err;
         throw lisaaProsessivirheenDiagnostiikka(err, "stream-spawn", virheTeksti);
     }
@@ -764,16 +826,7 @@ async function virta(kohde) {
         stream: mitattuVirta,
         tavuja: () => tavuja,
         virhe: () => turvallinenDiagnostiikkaTeksti(virheTeksti).trim().split("\n").pop() ?? "",
-        sulje: () => {
-            if (suljettu) return;
-            suljettu = true;
-            try {
-                proc.kill("SIGKILL");
-            } catch {
-                // Prosessi on jo suljettu.
-            }
-            mitattuVirta.destroy();
-        }
+        sulje
     };
 }
 
@@ -781,6 +834,8 @@ module.exports = {
     loyda,
     tiedot,
     virta,
+    onPreviewFormaatti,
+    suljeProsessit,
     julkaisunNimi,
     luoYtdlpVirhe,
     turvallinenDiagnostiikkaTeksti,

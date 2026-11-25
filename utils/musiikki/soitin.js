@@ -7,38 +7,22 @@
  */
 
 const { asetukset: lueAsetukset, lataaAaniKirjasto } = require("./config");
-const { MusiikkiVirhe, hakulause } = require("./lahteet");
+const { MusiikkiVirhe, hakulause, onSoundCloud } = require("./lahteet");
 const ytdlp = require("./ytdlp");
-const { createHash } = require("node:crypto");
+const { createHash, randomUUID } = require("node:crypto");
 
 const soittimet = new Map(); // guildId -> Soitin
-const SOUNDCLOUD_YRITYSTEN_MAX = 5;
-const UUDELLEENYRITETTAVAT_VIRHEET = new Set([
-    "drm-suojattu",
-    "formaatti",
-    "yksityinen",
-    "poistettu",
-    "ei-saatavilla",
-    "alue-estetty",
-    "ikarajoitus",
-    "kayttooikeusrajoitus"
-]);
 const TOISTOTILAT = ["pois", "kappale", "jono"];
-const ALKUVIRHE_RAJA_MS = 15_000; // jos tavuja ei tullut ja kesti näin vähän, haku epäonnistui
 
-async function oletusLuoVirta(kappale) {
-    return ytdlp.virta(kappale.url ?? hakulause(kappale));
+async function oletusLuoVirta(kappale, { signal }) {
+    return ytdlp.virta(kappale.url ?? hakulause(kappale), { signal, soundCloud: onSoundCloud(kappale) });
 }
 
 function toistovirheenKayttajaViesti(err, kappale) {
     if (err?.kayttajaViesti) return err.kayttajaViesti;
     if (err?.message === "YTDLP_PUUTTUU") return "yt-dlp puuttuu palvelimelta";
 
-    if (onSoundCloud(kappale) && voiYrittaaSoundCloudVarmistusta(err)) {
-        return "SoundCloud-tulosten äänivirtojen avaaminen epäonnistui. Kokeile toista hakua tai lähdettä.";
-    }
-
-    const luokka = ytdlpVirheluokka(err);
+    const luokka = err?.message === "YTDLP_AIKAKATKAISU" ? "aikakatkaisu" : ytdlpVirheluokka(err);
     if (luokka === "kirjautuminen") {
         return "Kappaleen toisto vaatii kirjautumisen tai palvelu vaatii vahvistuksen (bot-esto).";
     }
@@ -64,7 +48,9 @@ function toistovirheenKayttajaViesti(err, kappale) {
         return "Kappaleen toisto estettiin käyttöoikeuksien vuoksi.";
     }
     if (luokka === "formaatti") {
-        return "Kappaleelle ei löytynyt sopivaa äänimuotoa.";
+        return onSoundCloud(kappale)
+            ? "SoundCloud ei tarjonnut kappaleelle täyspitkää toistokelpoista äänimuotoa."
+            : "Kappaleelle ei löytynyt sopivaa äänimuotoa.";
     }
     if (luokka === "aikakatkaisu") {
         return "Yhteys palveluun aikakatkaistiin äänen latauksen aikana.";
@@ -84,64 +70,9 @@ function ytdlpVirheluokka(err) {
     return ytdlp.stderrDiagnostiikka(err?.stderr ?? err?.yksityiskohta ?? err?.message).stderrLuokka;
 }
 
-function ytdlpVirheDiagnostiikka(err) {
-    const stderr = err?.stderr ?? err?.yksityiskohta ?? err?.message ?? "";
-    return {
-        varavirheluokka: ytdlpVirheluokka(err),
-        varavirheVaihe: typeof err?.vaihe === "string" ? err.vaihe : null,
-        varavirheKoodi: typeof err?.code === "string" ? err.code : null,
-        varavirheExitCode: Number.isInteger(err?.exitCode) ? err.exitCode : null,
-        varavirheOte: ytdlp.turvallinenDiagnostiikkaTeksti(stderr)
-    };
-}
-
-function virheVirrasta(err, virta) {
-    const stderr = virta?.virhe?.();
-    if (!stderr) return err;
-
-    return Object.assign(new Error(err?.message ?? "YTDLP_VIRHE"), {
-        cause: err,
-        stderr,
-        ...ytdlp.stderrDiagnostiikka(stderr)
-    });
-}
-
 function kappaleenTunniste(kappale) {
     if (!kappale?.url) return null;
     return createHash("sha256").update(String(kappale.url)).digest("hex").slice(0, 16);
-}
-
-function onSoundCloud(kappale) {
-    return kappale?.hakulahde === "soundcloud" || /soundcloud/i.test(kappale?.lahde ?? "");
-}
-
-function kappaleenAvain(url) {
-    try {
-        const osoite = new URL(url);
-        return `${osoite.origin}${osoite.pathname.replace(/\/+$/, "")}`.toLowerCase();
-    } catch {
-        return String(url ?? "").toLowerCase();
-    }
-}
-
-function soundCloudEhdokkaat(kappaleet, ohitettavaUrl) {
-    const nahty = new Set();
-    if (ohitettavaUrl) nahty.add(kappaleenAvain(ohitettavaUrl));
-
-    return (Array.isArray(kappaleet) ? kappaleet : kappaleet ? [kappaleet] : [])
-        .filter(onSoundCloud)
-        .filter(kappale => !kappale.esikatselu && (kappale.kesto === null || kappale.kesto > 30))
-        .filter(kappale => {
-            const url = kappaleenAvain(kappale.url);
-            if (!url || nahty.has(url)) return false;
-            nahty.add(url);
-            return true;
-        })
-        .slice(0, SOUNDCLOUD_YRITYSTEN_MAX);
-}
-
-function voiYrittaaSoundCloudVarmistusta(err) {
-    return UUDELLEENYRITETTAVAT_VIRHEET.has(ytdlpVirheluokka(err));
 }
 
 class Soitin {
@@ -162,6 +93,10 @@ class Soitin {
         ilmoita = () => {}
     }) {
         this.guildId = guildId;
+        this.nakymaId = randomUUID();
+        this.voimakkuus = 100;
+        this.soiNykyista = false;
+        this.ilmoitaSoivasta = false;
         this.voice = voice;
         this.luoVirta = luoVirta;
         this.asetukset = asetukset;
@@ -178,11 +113,8 @@ class Soitin {
         this.yhdistaaKanavalle = null;
         this.virta = null;
         this.resurssi = null;
-        this.toistonVaravaihtoehdot = [];
-        this.toistonYritys = 1;
-        this.alkoi = 0;
+        this.peruutus = null;
         this.sarja = 0;
-        this.valmis = true;
         this.lopetettu = false;
         this.ajastinTyhja = null;
         this.ajastinYksin = null;
@@ -191,11 +123,19 @@ class Soitin {
             behaviors: { noSubscriber: voice.NoSubscriberBehavior.Pause }
         });
 
-        this.soitin.on(voice.AudioPlayerStatus.Idle, () => this.#kappaleValmis());
-        this.soitin.on("error", err => {
-            console.error(`❌ Äänisoittimen virhe (${this.guildId}):`, err.message);
-            this.#kappaleValmis(err || new Error("soittimen virhe"));
+        this.soitin.on(voice.AudioPlayerStatus.Playing, (_, tila) => {
+            if (!tila?.resource || tila.resource !== this.resurssi) return;
+            if (!this.soiNykyista) this.musiikkiToistoAlkoi?.(this.nyt);
+            this.soiNykyista = true;
+            if (this.ilmoitaSoivasta) {
+                this.ilmoitaSoivasta = false;
+                this.ilmoita({ tyyppi: "soi", kappale: this.nyt });
+            } else {
+                this.ilmoita({ tyyppi: "tila" });
+            }
         });
+        this.soitin.on(voice.AudioPlayerStatus.Idle, vanha => this.#kappaleValmis(vanha?.resource));
+        this.soitin.on("error", err => this.#kappaleValmis(err.resource, err));
     }
 
     // -----------------------------------------------------------------------
@@ -208,7 +148,12 @@ class Soitin {
         if (this.lopetettu) throw new MusiikkiVirhe("Soitin on jo suljettu. Yritä lisätä kappale uudelleen.");
         if (this.yhteys && this.kanavaId === kanava.id) return Promise.resolve();
 
-        if (!this.yhdistaa || this.yhdistaaKanavalle !== kanava.id) {
+        if ((this.yhdistaa && this.yhdistaaKanavalle !== kanava.id) ||
+            (this.kanavaId && this.kanavaId !== kanava.id && (this.nyt || this.jono.length))) {
+            throw new MusiikkiVirhe("Soitin on käytössä toisella äänikanavalla.");
+        }
+
+        if (!this.yhdistaa) {
             this.yhdistaaKanavalle = kanava.id;
             this.yhdistaa = this.#yhdista(kanava).finally(() => { this.yhdistaa = null; });
         }
@@ -218,7 +163,10 @@ class Soitin {
 
     async #yhdista(kanava) {
         const v = this.voice;
-        this.yhteys?.destroy();
+        const vanhaYhteys = this.yhteys;
+        this.yhteys = null;
+        this.kanavaId = null;
+        vanhaYhteys?.destroy();
 
         const yhteys = v.joinVoiceChannel({
             channelId: kanava.id,
@@ -242,14 +190,14 @@ class Soitin {
         // Jos yhteys katkeaa (esim. botti siirretään toiselle kanavalle), annetaan
         // sille hetki palautua; muuten siivotaan koko soitin pois.
         yhteys.on(v.VoiceConnectionStatus.Disconnected, async () => {
-            if (this.lopetettu) return;
+            if (this.lopetettu || this.yhteys !== yhteys) return;
             try {
                 await Promise.race([
                     v.entersState(yhteys, v.VoiceConnectionStatus.Signalling, 5_000),
                     v.entersState(yhteys, v.VoiceConnectionStatus.Connecting, 5_000)
                 ]);
             } catch {
-                this.lopeta();
+                if (this.yhteys === yhteys) this.lopeta();
             }
         });
 
@@ -309,10 +257,7 @@ class Soitin {
         if (!this.nyt) return null;
 
         const kappale = this.nyt;
-        this.valmis = true;
-        this.virta?.sulje();
-
-        try { this.soitin.stop(true); } catch { /* ei soinut */ }
+        this.#suljeToisto();
 
         this.#seuraava({ ohitus: true }).catch(err => console.error("❌ Ohitus epäonnistui:", err));
         return kappale;
@@ -334,6 +279,11 @@ class Soitin {
         }
 
         return null;
+    }
+
+    asetaVoimakkuus(arvo) {
+        this.voimakkuus = arvo;
+        this.resurssi?.volume?.setVolume(arvo / 100);
     }
 
     nytTiedot() {
@@ -359,14 +309,11 @@ class Soitin {
         clearTimeout(this.ajastinYksin);
         this.jono = [];
         this.nyt = null;
-        this.toistonVaravaihtoehdot = [];
-        this.sarja++;
-        this.virta?.sulje();
-
-        try { this.soitin.stop(true); } catch { /* jo pysäytetty */ }
+        this.#suljeToisto();
         try { this.yhteys?.destroy(); } catch { /* jo tuhottu */ }
 
         if (soittimet.get(this.guildId) === this) soittimet.delete(this.guildId);
+        this.ilmoita({ tyyppi: "suljettu" });
     }
 
     /** Kutsutaan kun botin äänikanavan jäsenet muuttuvat. */
@@ -397,143 +344,58 @@ class Soitin {
         this.ajastinTyhja.unref?.();
     }
 
-    /** Kappale loppui, ohitettiin tai epäonnistui. */
-    #kappaleValmis(virhe = null) {
-        if (this.lopetettu || !this.nyt || this.valmis) return;
-        this.valmis = true;
-
-        const kappale = this.nyt;
-        const virta = this.virta;
-        const toistovirhe = virheVirrasta(virhe, virta);
-        const eiTullutAanta = virta ? virta.tavuja() === 0 : false;
-        const epaonnistui = Boolean(virhe) || (eiTullutAanta && Date.now() - this.alkoi < ALKUVIRHE_RAJA_MS);
-
-        if (epaonnistui) {
-            console.warn("[musiikki-toisto] " + JSON.stringify({
-                vaihe: "aanivirta-epäonnistui",
-                lahde: kappale.lahde,
-                kappaleTunniste: kappaleenTunniste(kappale),
-                virheluokka: ytdlpVirheluokka(toistovirhe),
-                yritys: this.toistonYritys,
-                onnistui: false
-            }));
-        }
-
-        virta?.sulje();
-        this.virta = null;
+    #suljeToisto() {
+        this.musiikkiToistoLoppui?.();
+        this.soiNykyista = false;
+        this.ilmoitaSoivasta = false;
+        this.sarja++;
         this.resurssi = null;
-
-        if (epaonnistui) {
-            if (onSoundCloud(kappale) && this.toistonVaravaihtoehdot.length &&
-                voiYrittaaSoundCloudVarmistusta(toistovirhe)) {
-                const sarja = ++this.sarja;
-                this.#jatkaSoundCloudVaihtoehdoilla(
-                    kappale,
-                    this.toistonVaravaihtoehdot,
-                    this.toistonYritys,
-                    sarja
-                ).catch(err => console.error("❌ SoundCloud-vaihtoehdot epäonnistuivat:", err));
-                return;
-            }
-
-            this.ilmoita({
-                tyyppi: "virhe",
-                kappale,
-                syy: toistovirhe?.stderr || (typeof toistovirhe === "string" ? toistovirhe : toistovirhe?.message) || "",
-                viesti: toistovirheenKayttajaViesti(toistovirhe, kappale)
-            });
-            if (this.silmukka === "kappale") this.silmukka = "pois"; // ei toisteta rikkinäistä kappaletta
-            this.nyt = null;
-            this.toistonVaravaihtoehdot = [];
-        }
-
-        this.#seuraava().catch(err => console.error("❌ Seuraavan kappaleen aloitus epäonnistui:", err));
+        this.peruutus?.abort();
+        this.peruutus = null;
+        this.virta?.sulje();
+        this.virta = null;
+        try { this.soitin.stop(true); } catch { /* soitin on jo pysähtynyt */ }
     }
 
-    async #avaaSoundCloudEhdokkaat(ehdokkaat, onPeruttu, yrityksenSiirto = 0) {
-        const kokeiltavat = soundCloudEhdokkaat(ehdokkaat).slice(0, SOUNDCLOUD_YRITYSTEN_MAX - yrityksenSiirto);
-        let viimeisinVirhe = null;
+    #kappaleValmis(resurssi, virhe = null) {
+        if (!resurssi || resurssi !== this.resurssi || this.lopetettu) return;
 
-        for (let indeksi = 0; indeksi < kokeiltavat.length; indeksi++) {
-            if (onPeruttu()) return null;
-
-            const kappale = kokeiltavat[indeksi];
-            const yritys = yrityksenSiirto + indeksi + 1;
-            try {
-                const virta = await this.luoVirta(kappale);
-                console.info("[musiikki-toisto] " + JSON.stringify({
-                    vaihe: "soundcloud-yritys",
-                    lahde: kappale.lahde,
-                    kappaleTunniste: kappaleenTunniste(kappale),
-                    virheluokka: null,
-                    yritys,
-                    onnistui: true
-                }));
-                if (onPeruttu()) {
-                    virta.sulje();
-                    return null;
-                }
-
-                return {
-                    kappale,
-                    virta,
-                    varavaihtoehdot: kokeiltavat.slice(indeksi + 1),
-                    yritys
-                };
-            } catch (err) {
-                viimeisinVirhe = err;
-                console.warn("[musiikki-toisto] " + JSON.stringify({
-                    vaihe: "soundcloud-yritys",
-                    lahde: kappale.lahde,
-                    kappaleTunniste: kappaleenTunniste(kappale),
-                    virheluokka: ytdlpVirheluokka(err),
-                    yritys,
-                    onnistui: false
-                }));
-                if (onPeruttu()) return null;
-                if (!voiYrittaaSoundCloudVarmistusta(err)) throw err;
-            }
+        const odotettuMs = this.nyt.kesto * 1000;
+        // Resurssin aika mittaa dekoodattua ääntä, myös tilaajattoman tauon yli.
+        const soitettuMs = resurssi.playbackDuration;
+        const liianLyhyt = Number.isFinite(soitettuMs) && odotettuMs > 0 &&
+            odotettuMs - soitettuMs > Math.max(3000, odotettuMs * 0.10);
+        const tyhja = this.virta?.tavuja() === 0;
+        if (!virhe && (liianLyhyt || tyhja)) {
+            virhe = Object.assign(new Error("Äänivirta päättyi ennenaikaisesti."), {
+                kayttajaViesti: tyhja ? "Lähteestä ei saatu ääntä." : "Äänivirta katkesi ennen kappaleen loppua."
+            });
         }
-
-        throw viimeisinVirhe ?? new Error("SoundCloud-varahausta ei löytynyt soitettavaa tulosta.");
+        this.#viimeistele(virhe, soitettuMs, odotettuMs);
+        this.#seuraava().catch(err => console.error("❌ Seuraavan kappaleen aloitus epäonnistui:", err?.name));
     }
 
-    async #jatkaSoundCloudVaihtoehdoilla(kappale, ehdokkaat, yritys, sarja) {
-        const onPeruttu = () => sarja !== this.sarja || this.lopetettu;
-        try {
-            const varavirta = await this.#avaaSoundCloudEhdokkaat(ehdokkaat, onPeruttu, yritys);
-            if (!varavirta || onPeruttu()) return;
+    #viimeistele(virhe, soitettuMs = 0, odotettuMs = this.nyt?.kesto * 1000) {
+        const kappale = this.nyt;
+        const stderr = virhe?.stderr || (virhe && this.virta?.virhe?.());
+        const toistovirhe = stderr && !virhe.kayttajaViesti && !virhe.stderr
+            ? { message: virhe.message, stderr }
+            : virhe;
+        this.#suljeToisto();
+        if (!virhe) return;
 
-            this.nyt = varavirta.kappale;
-            this.valmis = false;
-            this.virta = varavirta.virta;
-            this.toistonVaravaihtoehdot = varavirta.varavaihtoehdot;
-            this.toistonYritys = varavirta.yritys;
-            this.resurssi = this.voice.createAudioResource(varavirta.virta.stream, {
-                inputType: this.voice.StreamType.Arbitrary,
-                metadata: varavirta.kappale
-            });
-            this.alkoi = Date.now();
-            this.soitin.play(this.resurssi);
-            this.ilmoita({ tyyppi: "soi", kappale: varavirta.kappale });
-        } catch (err) {
-            if (onPeruttu()) return;
-
-            this.virta?.sulje();
-            this.virta = null;
-            this.resurssi = null;
-            this.toistonVaravaihtoehdot = [];
-            if (this.silmukka === "kappale") this.silmukka = "pois";
-            this.nyt = null;
-            this.valmis = true;
-            this.ilmoita({
-                tyyppi: "virhe",
-                kappale,
-                syy: err?.stderr ?? err?.message ?? "",
-                viesti: toistovirheenKayttajaViesti(err, kappale)
-            });
-            await this.#seuraava();
-        }
+        console.warn("[musiikki-toisto] " + JSON.stringify({
+            vaihe: "aanivirta-epäonnistui",
+            lahde: kappale.lahde,
+            kappaleTunniste: kappaleenTunniste(kappale),
+            virheluokka: ytdlpVirheluokka(toistovirhe),
+            odotettuMs: odotettuMs || null,
+            soitettuMs,
+            syy: virhe.kayttajaViesti ?? virhe.vaihe ?? null
+        }));
+        if (this.silmukka === "kappale") this.silmukka = "pois";
+        this.nyt = null;
+        this.ilmoita({ tyyppi: "virhe", kappale, viesti: toistovirheenKayttajaViesti(toistovirhe, kappale) });
     }
 
     async #seuraava({ ohitus = false } = {}) {
@@ -549,102 +411,52 @@ class Soitin {
             seuraava = this.nyt;
         } else {
             if (this.silmukka === "jono" && this.nyt) this.jono.push(this.nyt);
-            seuraava = this.jono.shift();
+            const edellinen = this.nyt?.pyytaja;
+            const vuoro = this.musiikkiAsetukset?.fair && edellinen
+                ? this.jono.findIndex(k => k.pyytaja !== edellinen) : -1;
+            seuraava = this.jono.splice(Math.max(0,vuoro),1)[0];
         }
 
         if (!seuraava) {
             const soiOli = Boolean(this.nyt);
             this.nyt = null;
-            this.toistonVaravaihtoehdot = [];
             this.resurssi = null;
-            if (soiOli) this.ilmoita({ tyyppi: "jono_loppui" });
+            if (soiOli) {
+                this.ilmoita({ tyyppi: "jono_loppui" });
+                void this.musiikkiAuto?.();
+            }
             this.#aloitaTyhjaAjastin();
             return;
         }
 
         this.nyt = seuraava;
-        this.valmis = false;
-        this.alkoi = Date.now();
+        const peruutus = new AbortController();
+        this.peruutus = peruutus;
 
         try {
-            let soitettava = seuraava;
-            let virta;
-            let varavaihtoehdot = soundCloudEhdokkaat(
-                seuraava.varatoistonEhdokkaat,
-                seuraava.url
-            );
-            let yritys = 1;
-            varavaihtoehdot = varavaihtoehdot.slice(0, SOUNDCLOUD_YRITYSTEN_MAX - 1);
-            try {
-                virta = await this.luoVirta(seuraava);
-                console.info("[musiikki-toisto] " + JSON.stringify({
-                    vaihe: "aanivirta-yritys",
-                    lahde: seuraava.lahde,
-                    kappaleTunniste: kappaleenTunniste(seuraava),
-                    virheluokka: null,
-                    yritys,
-                    onnistui: true
-                }));
-            } catch (ytVirhe) {
-                if (sarja !== this.sarja || this.lopetettu) return;
-
-                console.warn("[musiikki-toisto] " + JSON.stringify({
-                    vaihe: "aanivirta-yritys",
-                    lahde: seuraava.lahde,
-                    kappaleTunniste: kappaleenTunniste(seuraava),
-                    virheluokka: ytdlpVirheluokka(ytVirhe),
-                    yritys,
-                    onnistui: false
-                }));
-
-                if (onSoundCloud(seuraava) && varavaihtoehdot.length &&
-                    voiYrittaaSoundCloudVarmistusta(ytVirhe)) {
-                    const varavirta = await this.#avaaSoundCloudEhdokkaat(
-                        varavaihtoehdot,
-                        () => sarja !== this.sarja || this.lopetettu,
-                        yritys
-                    );
-                    if (!varavirta) return;
-                    virta = varavirta.virta;
-                    soitettava = varavirta.kappale;
-                    varavaihtoehdot = varavirta.varavaihtoehdot;
-                    yritys = varavirta.yritys;
-                } else {
-                    throw ytVirhe;
-                }
-            }
-
-            // Välillä ehdittiin ohittaa tai lopettaa
+            const virta = await this.luoVirta(seuraava, { signal: peruutus.signal });
             if (sarja !== this.sarja || this.lopetettu) {
                 virta.sulje();
                 return;
             }
 
             this.virta = virta;
-            this.nyt = soitettava;
-            this.toistonVaravaihtoehdot = varavaihtoehdot;
-            this.toistonYritys = yritys;
+            if (virta.stream.errored) throw virta.stream.errored;
             const v = this.voice;
-            this.resurssi = v.createAudioResource(virta.stream, { inputType: v.StreamType.Arbitrary, metadata: soitettava });
-            this.alkoi = Date.now();
-            this.soitin.play(this.resurssi);
-
-            if (!toistetaan) this.ilmoita({ tyyppi: "soi", kappale: soitettava });
+            const resurssi = v.createAudioResource(virta.stream, {
+                inputType: v.StreamType.Arbitrary,
+                inlineVolume: true,
+                metadata: seuraava
+            });
+            this.resurssi = resurssi;
+            resurssi.volume?.setVolume(this.voimakkuus / 100);
+            virta.stream.once("error", err => this.#kappaleValmis(resurssi, err));
+            this.ilmoitaSoivasta = !toistetaan;
+            this.soitin.play(resurssi);
         } catch (err) {
             if (sarja !== this.sarja || this.lopetettu) return;
 
-            this.virta?.sulje();
-            this.virta = null;
-            this.toistonVaravaihtoehdot = [];
-            this.resurssi = null;
-            const puuttuu = err.message === "YTDLP_PUUTTUU";
-            const viesti = toistovirheenKayttajaViesti(err, seuraava);
-            this.ilmoita({ tyyppi: "virhe", kappale: seuraava, syy: err.message, viesti });
-            if (puuttuu) this.jono = []; // ei kannata yrittää jokaista kappaletta erikseen
-
-            if (this.silmukka === "kappale") this.silmukka = "pois";
-            this.nyt = null;
-            this.valmis = true;
+            this.#viimeistele(err);
             await this.#seuraava();
         }
     }

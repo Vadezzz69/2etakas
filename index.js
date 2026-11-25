@@ -7,7 +7,12 @@ const { Client, GatewayIntentBits } = require("discord.js");
 const commandHandler = require("./handlers/commandHandler");
 const eventHandler = require("./handlers/eventHandler");
 const { kaynnistaAjastin } = require("./utils/ajastin");
+const { suljeProsessit } = require("./utils/musiikki/ytdlp");
 const { kaynnistaDashboard } = require("./dashboard/server");
+
+process.once("exit", suljeProsessit);
+process.once("SIGINT", () => process.exit(130));
+process.once("SIGTERM", () => process.exit(143));
 
 if (!process.env.TOKEN) {
     console.error("❌ TOKEN puuttuu ympäristömuuttujista. Bottia ei käynnistetä.");
@@ -44,6 +49,12 @@ eventHandler(client);
 // Käynnistetään dashboard heti, jotta hosting näkee HTTP-portin
 // myös silloin, jos Discord-kirjautuminen kestää tai epäonnistuu.
 kaynnistaDashboard(client, process.env.DASHBOARD_PORT || process.env.PORT || 10000);
+
+// Alusta korttirenderöinti ennen interaktioita ja äänitoistoa.
+if (process.env.D1_API_URL && process.env.D1_API_KEY) {
+    try { require("./utils/renderPng").warmup(); }
+    catch (err) { console.warn("⚠️ Komitea-kuvarenderöinnin alustus epäonnistui:", err?.name); }
+}
 
 // Kirjaudutaan Discordiin
 client.login(process.env.TOKEN)

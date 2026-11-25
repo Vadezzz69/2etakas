@@ -34,5 +34,6 @@ module.exports = {
 
         const ihmisia = [...(kanava.members?.values() ?? [])].filter(m => !m.user?.bot).length;
         soitin.kanavaMuuttui(ihmisia);
+        soitin.musiikkiKuuntelijat?.();
     }
 };

@@ -39,20 +39,25 @@ function lueEvaste(req, nimi) {
 
     for (const osa of otsikko.split(";")) {
         const [avain, ...arvo] = osa.trim().split("=");
-        if (avain === nimi) return decodeURIComponent(arvo.join("="));
+        if (avain === nimi) {
+            try { return decodeURIComponent(arvo.join("=")); }
+            catch { return null; }
+        }
     }
 
     return null;
 }
 
-/**
- * Valinnainen suojaus: jos DASHBOARD_TOKEN on asetettu, kaikki dashboardin
- * sivut ja rajapinnat vaativat sen (`?token=...` kerran → tallentuu evästeeseen,
- * tai `x-dashboard-token`-otsake). Ilman asetusta dashboard on avoin kuten ennen.
- */
+/** Jätä juuripolku elossa hostin tarkistusta varten, kun dashboard on suljettu. */
 function tokenSuojaus(req, res, next) {
+    if (typeof res.setHeader === "function") res.setHeader("Referrer-Policy", "no-referrer");
     const odotettu = process.env.DASHBOARD_TOKEN;
-    if (!odotettu) return next();
+    if (!odotettu?.trim()) {
+        if (req.path === "/" && (req.method === "GET" || req.method === "HEAD")) {
+            return res.status(200).type("text").send("Komitea toimii. Dashboard on pois käytöstä.");
+        }
+        return res.status(403).type("text").send("Dashboard on pois käytöstä.");
+    }
 
     const annettu = req.query.token ?? req.get("x-dashboard-token") ?? lueEvaste(req, TOKEN_EVASTE);
 
@@ -202,8 +207,8 @@ function kaynnistaDashboard(client, port = 3000) {
 
     const palvelin = app.listen(port, () => {
         console.log(`🖥️  Dashboard käynnissä portissa ${port}`);
-        if (!process.env.DASHBOARD_TOKEN) {
-            console.warn("⚠️ DASHBOARD_TOKEN ei ole asetettu: dashboard on avoin kaikille jotka löytävät portin.");
+        if (!process.env.DASHBOARD_TOKEN?.trim()) {
+            console.warn("⚠️ DASHBOARD_TOKEN ei ole asetettu: dashboardin tietonäkymät on suljettu.");
         }
     });
 
@@ -216,4 +221,4 @@ function kaynnistaDashboard(client, port = 3000) {
 
 }
 
-module.exports = { kaynnistaDashboard };
+module.exports = { kaynnistaDashboard, tokenSuojaus };

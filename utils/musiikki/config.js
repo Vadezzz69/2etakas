@@ -42,7 +42,7 @@ function asetukset() {
 
     return {
         maxJono: luku("MUSIIKKI_MAX_JONO", 100, 1, 500),
-        maxLista: luku("MUSIIKKI_MAX_LISTA", 50, 1, 200),
+        maxLista: luku("MUSIIKKI_MAX_LISTA", 100, 1, 200),
         maxKestoS: luku("MUSIIKKI_MAX_KESTO_MIN", 120, 1, 1440) * 60,
         poistuJononJalkeenMs: luku("MUSIIKKI_POISTU_JONON_JALKEEN_S", 180, 10, 3600) * 1000,
         poistuYksinMs: luku("MUSIIKKI_POISTU_YKSIN_S", 60, 5, 3600) * 1000,

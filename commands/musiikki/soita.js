@@ -1,97 +1,61 @@
-const { ActionRowBuilder, ComponentType, SlashCommandBuilder, StringSelectMenuBuilder } = require("discord.js");
+const { MessageFlags, SlashCommandBuilder } = require("discord.js");
 const { randomUUID } = require("node:crypto");
 const { haeKappaleet, MusiikkiVirhe } = require("../../utils/musiikki/lahteet");
 const { asetukset } = require("../../utils/musiikki/config");
-const { valmisteleSoitto, haeTaiLuoSoitin } = require("../../utils/musiikki/ohjain");
-const { lisattyEmbed } = require("../../utils/musiikki/muotoilu");
+const { valmisteleSoitto, haeTaiLuoSoitin, kayttajanAaniKanavaId } = require("../../utils/musiikki/ohjain");
+const UI = require("../../utils/musiikki/muotoilu");
 
 const VALINTA_AIKARAJA_MS = 60_000;
+const kasitellytInteraktiot = new Set();
 
 function jononKokonaispituus(soitin) {
     return soitin ? soitin.jono.length + (soitin.nyt ? 1 : 0) : null;
 }
 
-function rajaa(teksti, max) {
-    const siisti = String(teksti ?? "").replace(/\s+/g, " ").trim();
-    return siisti.length > max ? `${siisti.slice(0, max - 1)}…` : siisti;
-}
-
-function kappaleenValinta(kappaleet, customId) {
-    const valinnat = kappaleet.map((kappale, indeksi) => ({
-        label: rajaa([kappale.artisti, kappale.otsikko].filter(Boolean).join(" - "), 100) || `Kappale ${indeksi + 1}`,
-        description: rajaa(`${kappale.lahde} - ${kappale.kesto === null ? "kesto tuntematon" : `${Math.floor(kappale.kesto / 60)}:${String(kappale.kesto % 60).padStart(2, "0")}`}`, 100),
-        value: String(indeksi)
-    }));
-
-    return new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-            .setCustomId(customId)
-            .setPlaceholder("Valitse soitettava versio")
-            .addOptions(valinnat)
-    );
-}
-
 async function valitseHakutulos(interaction, haku) {
     if (haku.kappaleet.length === 1) return haku.kappaleet[0];
 
-    const customId = `musiikki-haku-${randomUUID()}`;
-    await interaction.editReply({
-        content: "Valitse soitettava versio:",
-        embeds: [],
-        components: [kappaleenValinta(haku.kappaleet, customId)]
-    });
+    const valintaId = `musiikki-haku-${randomUUID()}`;
+    const peruutusId = `${valintaId}-peruuta`;
+    await interaction.editReply(UI.hakuNakyma(haku.kappaleet, valintaId, peruutusId));
 
     const viesti = await interaction.fetchReply();
     const kerain = viesti.createMessageComponentCollector({
-        componentType: ComponentType.StringSelect,
-        filter: valinta => valinta.customId === customId && valinta.user.id === interaction.user.id,
+        filter: valinta => {
+            if (valinta.customId !== valintaId && valinta.customId !== peruutusId) return false;
+            if (valinta.user.id === interaction.user.id) return true;
+            void valinta.reply({
+                ...UI.virhe("Vain haun tehnyt käyttäjä voi valita kappaleen."),
+                flags: MessageFlags.Ephemeral
+            }).catch(() => {});
+            return false;
+        },
         time: VALINTA_AIKARAJA_MS,
         max: 1
     });
 
     return new Promise((resolve, reject) => {
-        let valmis = false;
-        const aseta = tulos => {
-            if (valmis) return;
-            valmis = true;
-            resolve(tulos);
-        };
-
-        kerain.on("collect", async valinta => {
+        kerain.once("collect", async valinta => {
             try {
-                const indeksi = Number(valinta.values[0]);
-                if (!Number.isInteger(indeksi) || indeksi < 0 || indeksi >= haku.kappaleet.length) {
-                    await valinta.deferUpdate();
-                    await interaction.editReply({ content: "Valittua hakutulosta ei löytynyt.", components: [] });
-                    aseta(null);
-                    return;
-                }
-
                 await valinta.deferUpdate();
-                await interaction.editReply({ content: "Lisätään kappaletta jonoon...", components: [] });
-                console.info(`[musiikki-haku] ${JSON.stringify({
-                    hakuId: haku.hakuId,
-                    vaihe: "tulos-valittu",
-                    lahde: haku.kappaleet[indeksi].lahde,
-                    tulos: indeksi + 1,
-                    hakutapa: haku.hakutapa ?? "suora",
-                    valinnanSyy: "kayttajan-valinta",
-                    samankaltaisuus: haku.arviot?.[indeksi]?.samankaltaisuus ?? null,
-                    osumanPeruste: haku.arviot?.[indeksi]?.valinnanSyy ?? null
-                })}`);
-                aseta(haku.kappaleet[indeksi]);
-            } catch (err) {
-                if (!valmis) {
-                    valmis = true;
-                    reject(err);
+                const kappale = haku.kappaleet[Number(valinta.values?.[0])];
+                if (valinta.customId === peruutusId || !kappale) {
+                    await interaction.editReply(UI.onnistui("Haku peruutettu", "Voit tehdä uuden haun komennolla /soita."));
+                    return resolve(null);
                 }
+                await interaction.editReply(UI.onnistui("Lisätään jonoon", UI.nimi(kappale)));
+                resolve(kappale);
+            } catch (err) {
+                reject(err);
             }
         });
-
-        kerain.on("end", (keratyt, syy) => {
-            if (valmis || syy !== "time" || keratyt.size > 0) return;
-            interaction.editReply({ content: "Hakutuloksen valinta vanheni. Suorita /soita uudelleen.", components: [] })
-                .then(() => aseta(null), reject);
+        kerain.once("end", (keratyt, syy) => {
+            if (keratyt.size > 0) return;
+            if (syy === "time") {
+                interaction.editReply(UI.virhe("Valinta vanheni. Tee uusi haku komennolla /soita.")).then(() => resolve(null), reject);
+            } else {
+                resolve(null);
+            }
         });
     });
 }
@@ -103,7 +67,7 @@ module.exports = {
         .addStringOption(option =>
             option
                 .setName("haku")
-                .setDescription("Kappaleen nimi tai linkki")
+                .setDescription("Kappaleen nimi tai linkki, tai linkki soittolistaan")
                 .setRequired(true)
                 .setMaxLength(500)
         )
@@ -118,25 +82,31 @@ module.exports = {
                 )
         ),
 
-    async execute(interaction) {
+    async execute(interaction, modal = {}) {
+        const { id } = interaction;
+        if (id) {
+            if (kasitellytInteraktiot.has(id)) return;
+            kasitellytInteraktiot.add(id);
+            setTimeout(() => kasitellytInteraktiot.delete(id), 15 * 60_000).unref();
+        }
         await interaction.deferReply();
 
         const valmis = await valmisteleSoitto(interaction);
-    if (!valmis) return;
+        if (!valmis) return;
 
-    const { kanava } = valmis;
-    let vaihe = "haku";
-    let kappaleLoytyi = false;
-    let jonoonLisaysKutsuttu = false;
-    let jonoonLisaysOnnistui = false;
-    let jonoEnnen = jononKokonaispituus(valmis.soitin);
-    let soitin = null;
-    let hakuId = null;
+        const { kanava } = valmis;
+        let vaihe = "haku";
+        let kappaleLoytyi = false;
+        let jonoonLisaysKutsuttu = false;
+        let jonoonLisaysOnnistui = false;
+        let jonoEnnen = jononKokonaispituus(valmis.soitin);
+        let soitin = null;
+        let hakuId = null;
 
         try {
-            const haku = await haeKappaleet(interaction.options.getString("haku"), {
+            const haku = await haeKappaleet(modal.haku ?? interaction.options?.getString("haku"), {
                 pyytaja: interaction.user.id,
-                hakulahde: interaction.options.getString("lahde") ?? undefined,
+                hakulahde: interaction.options?.getString("lahde") ?? undefined,
                 asetukset: asetukset()
             });
             hakuId = haku.hakuId ?? null;
@@ -150,10 +120,10 @@ module.exports = {
             }));
 
             if (!haku.kappaleet.length) {
-                const syy = haku.hylatty
-                    ? "Kaikki löydetyt kappaleet olivat suoria lähetyksiä tai liian pitkiä."
-                    : "Mitään ei löytynyt tällä haulla.";
-                return interaction.editReply(syy);
+                const syy = haku.lista
+                    ? "Soittolistalta ei löytynyt soitettavia kappaleita."
+                    : haku.hylatty ? "Löydetty kappale ei ole toistokelpoinen." : "Mitään ei löytynyt tällä haulla.";
+                return interaction.editReply(UI.virhe(syy));
             }
 
             vaihe = "valinta";
@@ -167,25 +137,19 @@ module.exports = {
                 }));
                 return;
             }
-            const valittuIndeksi = haku.valittavat
-                ? haku.kappaleet.findIndex(kappale => kappale.url === valittu.url)
-                : -1;
-            const soundCloudVaihtoehdot = valittuIndeksi >= 0
-                ? haku.kappaleet.slice(valittuIndeksi + 1).concat(haku.kappaleet.slice(0, valittuIndeksi))
-                : [];
-            const kappaleet = haku.valittavat
-                ? [{
-                    ...valittu,
-                    varatoistonEhdokkaat: valittu.hakulahde === "soundcloud"
-                        ? soundCloudVaihtoehdot
-                        : []
-                }]
+            const kappaleet = valittu ? [valittu] : haku.lista
+                ? haku.kappaleet.map(kappale => ({ ...kappale, soittolista: true }))
                 : haku.kappaleet;
 
             // Soitin haetaan vasta nyt: haun aikana toinen käyttäjä on voinut luoda sen.
             vaihe = "soitin";
-            soitin = haeTaiLuoSoitin(interaction.guildId);
-            soitin.tekstikanava = interaction.channel;
+            const tarkistaKanava = () => {
+                if (kayttajanAaniKanavaId(interaction) !== kanava.id) {
+                    throw new MusiikkiVirhe("Äänikanava vaihtui haun aikana. Tee haku uudelleen.");
+                }
+            };
+            tarkistaKanava();
+            soitin = haeTaiLuoSoitin(interaction.guildId,interaction.guild);
 
             try {
                 await soitin.yhdista(kanava);
@@ -194,6 +158,8 @@ module.exports = {
                 throw err;
             }
 
+            tarkistaKanava();
+            soitin.tekstikanava = interaction.channel;
             vaihe = "jonoon-lisays";
             jonoEnnen = jononKokonaispituus(soitin);
             jonoonLisaysKutsuttu = true;
@@ -206,6 +172,7 @@ module.exports = {
                 jononPituusEnnen: jonoEnnen
             }));
             const tulos = soitin.lisaa(kappaleet);
+            void require("../../utils/musiikki/yhteiso/store").activity(interaction.guildId,interaction.user.id,tulos.lisatyt.length,0).catch(()=>{});
             jonoonLisaysOnnistui = true;
             const jonoJalkeen = jononKokonaispituus(soitin);
             console.info("[musiikki-jono] " + JSON.stringify({
@@ -221,14 +188,14 @@ module.exports = {
             }));
 
             vaihe = "vastaus";
-            await interaction.editReply({
-                embeds: [lisattyEmbed({
-                    ...tulos,
-                    hylatty: haku.hylatty,
-                    lahde: haku.lahde,
-                    jonoPituus: jonoJalkeen
-                })]
-            });
+            soitin.paivitaPaneeli?.();
+            await interaction.editReply(UI.lisattyNakyma({
+                ...tulos,
+                lista: haku.lista,
+                hylatty: haku.hylatty,
+                lahde: haku.lahde,
+                jonoPituus: jonoJalkeen
+            }, soitin));
 
         } catch (err) {
             console.warn("[musiikki-jono] " + JSON.stringify({
@@ -245,7 +212,7 @@ module.exports = {
                 virheKoodi: typeof err?.code === "string" || Number.isInteger(err?.code) ? err.code : null
             }));
             if (err instanceof MusiikkiVirhe) {
-                return interaction.editReply(`⚠️ ${err.message}`);
+                return interaction.editReply(UI.virhe(err.message));
             }
             throw err;
         }

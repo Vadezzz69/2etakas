@@ -1,7 +1,7 @@
 const API_URL = (process.env.D1_API_URL || "").replace(/\/+$/, "");
 const API_KEY = process.env.D1_API_KEY || "";
 
-async function d1Request(path, body) {
+async function d1Request(path, body, signal) {
     if (!API_URL || !API_KEY) {
         throw new Error("D1_API_URL tai D1_API_KEY puuttuu.");
     }
@@ -12,7 +12,8 @@ async function d1Request(path, body) {
             "content-type": "application/json",
             "authorization": `Bearer ${API_KEY}`
         },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        signal
     });
 
     const text = await response.text();
@@ -48,11 +49,11 @@ async function run(sql, params = []) {
     };
 }
 
-async function get(sql, params = []) {
+async function get(sql, params = [], signal) {
     const result = await d1Request("/api/all", {
         query: sql,
         params
-    });
+    }, signal);
 
     return result?.results?.[0];
 }
@@ -66,7 +67,12 @@ async function all(sql, params = []) {
     return result?.results ?? [];
 }
 
+async function batch(statements) {
+    return d1Request("/api/batch", { batch: statements }, AbortSignal.timeout(15_000));
+}
+
 module.exports = {
+    batch,
     run,
     get,
     all,

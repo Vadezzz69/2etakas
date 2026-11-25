@@ -5,6 +5,7 @@ const json = (data, status = 200) =>
   });
 
 function authorized(request, env) {
+  if (typeof env.API_KEY !== "string" || !env.API_KEY.trim()) return false;
   const auth = request.headers.get("authorization") || "";
   return auth === `Bearer ${env.API_KEY}`;
 }

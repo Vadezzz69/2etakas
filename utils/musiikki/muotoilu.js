@@ -1,7 +1,67 @@
 const { info, warning } = require("../ui");
 const { palkki } = require("../tyyli");
-const { satunnainen } = require("../satunnainen");
-const V = require("./viestit");
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require("discord.js");
+
+const SIVUKOKO = 10;
+const TOISTOTILAN_NIMET = { pois: "Pois", kappale: "Kappale", jono: "Koko jono" };
+const maininnat = { parse: [] };
+
+function rajaa(teksti, max) {
+    const siisti = String(teksti ?? "").replace(/\s+/g, " ").trim();
+    return siisti.length > max ? `${siisti.slice(0, max - 1)}…` : siisti;
+}
+
+function linkki(arvo, max = 250) {
+    try {
+        const url = new URL(arvo);
+        if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.href.length > max) return;
+        if (url.searchParams.has("secret_token") || /\/s-[^/]+\/?$/.test(url.pathname)) return;
+        return url.href.replace(/</g, "%3C").replace(/>/g, "%3E");
+    } catch { return undefined; }
+}
+
+function lahdeNimi(lahde) {
+    if (/^soundcloud/i.test(lahde ?? "")) return "SoundCloud";
+    if (/^youtube/i.test(lahde ?? "")) return "YouTube";
+    return turvallinen(rajaa(lahde || "Tuntematon", 28));
+}
+
+function nakyma(embed, components = []) {
+    return { content: null, embeds: [embed], components, allowedMentions: maininnat };
+}
+
+function onnistui(title, description) {
+    return nakyma(info({ title, description }));
+}
+
+function virhe(description, kappale, title = "Musiikki") {
+    return nakyma(warning({
+        title,
+        description: kappale ? `${nimi(kappale)}\n\n${description}` : description
+    }));
+}
+
+function kentta(name, value) {
+    return { name, value: String(value), inline: true };
+}
+
+function painike(soitin, toiminto, label, style = ButtonStyle.Secondary, disabled = false) {
+    return new ButtonBuilder().setCustomId(`musiikki:${soitin.nakymaId}:${toiminto}`)
+        .setLabel(label).setStyle(style).setDisabled(disabled);
+}
+
+function riviPainikkeita(...painikkeet) {
+    return new ActionRowBuilder().addComponents(...painikkeet);
+}
+
+function jonopainike(soitin) {
+    return painike(soitin, "jono:0", "Näytä jono");
+}
+
+function kokonaiskesto(kappaleet) {
+    if (!kappaleet.length || kappaleet.some(k => !Number.isFinite(k.kesto))) return null;
+    return kappaleet.reduce((summa, k) => summa + k.kesto, 0);
+}
 
 /** Poistaa Markdown-muotoilun ja linkkimerkit kappaleen nimestä (nimet tulevat verkosta). */
 function turvallinen(teksti) {
@@ -19,103 +79,125 @@ function aika(sekunnit) {
     return h ? `${h}:${String(m).padStart(2, "0")}:${sek}` : `${m}:${sek}`;
 }
 
-function nimi(kappale) {
-    const otsikko = turvallinen(kappale.otsikko);
-    const teksti = kappale.url ? `[${otsikko}](${kappale.url})` : otsikko;
-    return kappale.artisti ? `${teksti} — ${turvallinen(kappale.artisti)}` : teksti;
+function nimi(kappale, { lyhyt = false, artisti = true } = {}) {
+    const otsikko = turvallinen(rajaa(kappale.otsikko || "Tuntematon kappale", lyhyt ? 65 : 150));
+    const url = linkki(kappale.url, lyhyt ? 180 : 250);
+    const teksti = url ? `[${otsikko}](<${url}>)` : otsikko;
+    return artisti && kappale.artisti ? `${teksti} · ${turvallinen(rajaa(kappale.artisti, 70))}` : teksti;
 }
 
 function rivi(kappale) {
-    return `${nimi(kappale)} \`${aika(kappale.kesto)}\``;
+    return `${nimi(kappale, { lyhyt: true, artisti: false })} · ${aika(kappale.kesto)} · ${lahdeNimi(kappale.lahde)}`;
 }
 
-function soiEmbed(kappale, jonossa) {
-    return info({
-        title: satunnainen(V.SOI_OTSIKOT),
-        description: nimi(kappale),
-        thumbnail: kappale.kuva ?? undefined,
+function soitinNakyma(soitin) {
+    const { kappale, kulunutS, tauolla } = soitin.nytTiedot();
+    if (soitin.lopetettu) return onnistui("Musiikki pysäytetty", "Soitin on suljettu.");
+    if (!kappale) {
+        return nakyma(info({ title: "Musiikkisoitin", description: "Jono on tyhjä. Lisää musiikkia komennolla /soita." }),
+            [riviPainikkeita(jonopainike(soitin))]);
+    }
+
+    const kesto = Number.isFinite(kappale.kesto) && kappale.kesto > 0 ? kappale.kesto : null;
+    const aikaTeksti = `${aika(kulunutS)} / ${kesto ? aika(kesto) : "tuntematon"}`;
+    const eteneminen = kesto ? `${palkki(Math.min(100, kulunutS / kesto * 100), 12)}  ` : "";
+    const tila = tauolla ? "Tauolla" : soitin.soiNykyista ? "Toistetaan" : "Valmistellaan";
+    const embed = info({
+        title: "Musiikkisoitin",
+        description: `${nimi(kappale)}\n\n${eteneminen}\`${aikaTeksti}\``,
+        thumbnail: linkki(kappale.kuva, 1000),
         fields: [
-            { name: "Kesto", value: aika(kappale.kesto), inline: true },
-            { name: "Lähde", value: kappale.lahde, inline: true },
-            { name: "Jonossa", value: `${jonossa}`, inline: true }
-        ].concat(kappale.pyytaja ? [{ name: "Pyysi", value: `<@${kappale.pyytaja}>`, inline: true }] : [])
-    });
-}
-
-/** Vastaus /soita-komennolle. */
-function lisattyEmbed({ lisatyt, pudotettu, hylatty, soiHeti, lahde, jonoPituus }) {
-    const ensimmainen = lisatyt[0];
-    const monta = lisatyt.length > 1;
-
-    const kuvaus = monta
-        ? lisatyt.slice(0, 8).map((k, i) => `${i + 1}. ${rivi(k)}`).join("\n") + (lisatyt.length > 8 ? `\n… ja ${lisatyt.length - 8} muuta` : "")
-        : rivi(ensimmainen);
-
-    const lisat = [];
-    if (pudotettu > 0) lisat.push(`${pudotettu} kappaletta ei mahtunut jonoon.`);
-    if (hylatty > 0) lisat.push(`${hylatty} kappaletta ohitettiin (suora lähetys tai liian pitkä).`);
-    if (lahde === "Spotify") lisat.push("Spotifyn ääntä ei voi soittaa, joten kappaleet haetaan nimellä YouTubesta tai SoundCloudista. Joskus löytyy väärä versio.");
-
-    return info({
-        title: monta ? `➕ ${lisatyt.length} kappaletta jonoon` : satunnainen(soiHeti ? V.SOI_OTSIKOT : V.LISATTY_OTSIKOT),
-        description: kuvaus + (lisat.length ? `\n\n*${lisat.join(" ")}*` : ""),
-        thumbnail: !monta && ensimmainen.kuva ? ensimmainen.kuva : undefined,
-        fields: [{ name: "Jonossa yhteensä", value: `${jonoPituus}`, inline: true }]
-    });
-}
-
-function jonoEmbed(soitin) {
-    const rivit = soitin.jono.slice(0, 10).map((k, i) => `${i + 1}. ${rivi(k)}`);
-    const lisaa = soitin.jono.length > 10 ? `\n… ja ${soitin.jono.length - 10} muuta` : "";
-    const kokonaisKesto = soitin.jono.reduce((summa, k) => summa + (k.kesto ?? 0), 0);
-
-    const kentat = [];
-
-    if (soitin.nyt) kentat.push({ name: "▶️ Nyt soi", value: rivi(soitin.nyt) });
-    kentat.push({
-        name: soitin.jono.length ? `Jonossa (${soitin.jono.length})` : "Jonossa",
-        value: soitin.jono.length ? rivit.join("\n") + lisaa : satunnainen(V.JONO_TYHJA)
-    });
-    kentat.push({ name: "Toisto", value: soitin.silmukka, inline: true });
-    if (soitin.jono.length) kentat.push({ name: "Jonon kesto", value: aika(kokonaisKesto), inline: true });
-
-    return info({ title: "🎵 Musiikkijono", fields: kentat });
-}
-
-function nytEmbed({ kappale, kulunutS, tauolla }) {
-    const prosentti = kappale.kesto ? Math.min(100, (kulunutS / kappale.kesto) * 100) : 0;
-    const ajat = kappale.kesto ? `${aika(kulunutS)} / ${aika(kappale.kesto)}` : aika(kulunutS);
-
-    return info({
-        title: tauolla ? "⏸️ Tauolla" : satunnainen(V.SOI_OTSIKOT),
-        description: `${nimi(kappale)}\n\n${palkki(prosentti, 16)}  \`${ajat}\``,
-        thumbnail: kappale.kuva ?? undefined,
-        fields: [
-            { name: "Lähde", value: kappale.lahde, inline: true },
-            ...(kappale.pyytaja ? [{ name: "Pyysi", value: `<@${kappale.pyytaja}>`, inline: true }] : [])
+            kentta("Tila", tila),
+            kentta("Äänenvoimakkuus", `${soitin.voimakkuus ?? 100} %`),
+            kentta("Lähde", lahdeNimi(kappale.lahde)),
+            kentta("Toistotila", TOISTOTILAN_NIMET[soitin.silmukka]),
+            kentta("Jonossa", soitin.jono.length),
+            ...(kappale.pyytaja && /^\d+$/.test(kappale.pyytaja) ? [kentta("Pyysi", `<@${kappale.pyytaja}>`)] : [])
         ]
     });
+    const versio = soitin.sarja;
+    return nakyma(embed, [
+        riviPainikkeita(
+            painike(soitin, `tauko:${versio}:${Number(tauolla)}`, tauolla ? "Jatka" : "Tauko", ButtonStyle.Primary, !soitin.soiNykyista),
+            painike(soitin, `ohita:${versio}`, "Seuraava"),
+            painike(soitin, "lopeta", "Pysäytä", ButtonStyle.Danger)
+        ),
+        riviPainikkeita(
+            painike(soitin, "sekoita", "Sekoita", ButtonStyle.Secondary, soitin.jono.length < 2),
+            painike(soitin, "toisto", `Toisto · ${TOISTOTILAN_NIMET[soitin.silmukka]}`),
+            jonopainike(soitin),
+            new ButtonBuilder().setCustomId(`km:favorite:${soitin.nakymaId}:${versio}`)
+                .setLabel("Suosikki").setEmoji("♥️").setStyle(ButtonStyle.Secondary)
+        )
+    ]);
 }
 
-/** Soittimen automaattiset ilmoitukset tekstikanavalle. */
-function ilmoitus(tapahtuma, soitin) {
-    switch (tapahtuma.tyyppi) {
-        case "soi":
-            return { embeds: [soiEmbed(tapahtuma.kappale, soitin.jono.length)] };
-        case "virhe": {
-            const kappale = V.tayta(satunnainen(V.KAPPALE_VIRHE), { otsikko: turvallinen(tapahtuma.kappale.otsikko) });
-            const kuvaus = tapahtuma.viesti
-                ? `${kappale}\n\n${turvallinen(tapahtuma.viesti)}`
-                : kappale;
-            return { embeds: [warning({ description: kuvaus })] };
-        }
-        case "jono_loppui":
-            return { content: satunnainen(V.JONO_LOPPUI) };
-        case "poistu":
-            return { content: satunnainen(tapahtuma.syy === "yksin" ? V.POISTU_YKSIN : V.POISTU_JONO) };
-        default:
-            return null;
-    }
+function jonoNakyma(soitin, pyydettySivu = 0) {
+    const jono = soitin?.jono ?? [];
+    const sivuja = Math.max(1, Math.ceil(jono.length / SIVUKOKO));
+    const sivu = Math.min(sivuja - 1, Math.max(0, pyydettySivu));
+    const alku = sivu * SIVUKOKO;
+    const kappaleet = jono.slice(alku, alku + SIVUKOKO);
+    const kesto = kokonaiskesto(jono);
+    const soiva = soitin?.nyt ? `**Nykyinen kappale**\n${rivi(soitin.nyt)}\n\n` : "";
+    const kuvaus = kappaleet.map((k, i) => `${alku + i + 1}. ${rivi(k)}`).join("\n");
+    const embed = info({
+        title: "Musiikkijono",
+        description: soiva + (kuvaus || "Jono on tyhjä. Lisää musiikkia komennolla /soita."),
+        fields: [kentta("Jonossa", jono.length), ...(kesto !== null ? [kentta("Kokonaiskesto", aika(kesto))] : [])],
+        footer: `Sivu ${sivu + 1} / ${sivuja}`
+    });
+    return nakyma(embed, soitin && sivuja > 1 ? [riviPainikkeita(
+        painike(soitin, `sivu:${sivu - 1}`, "Edellinen", ButtonStyle.Secondary, sivu === 0),
+        painike(soitin, `sivu:${sivu + 1}`, "Seuraava", ButtonStyle.Secondary, sivu === sivuja - 1)
+    )] : []);
 }
 
-module.exports = { turvallinen, aika, nimi, rivi, soiEmbed, lisattyEmbed, jonoEmbed, nytEmbed, ilmoitus };
+function lisattyNakyma({ lisatyt, pudotettu, hylatty, lahde, jonoPituus, lista }, soitin) {
+    const ensimmainen = lisatyt[0];
+    const monta = lisatyt.length > 1;
+    const kesto = kokonaiskesto(lisatyt);
+    const ohitettu = hylatty + pudotettu;
+    const embed = info({
+        title: lista ? "Soittolista lisätty jonoon" : monta ? "Kappaleet lisätty jonoon" : "Kappale lisätty jonoon",
+        description: lista ? turvallinen(rajaa(lista.nimi, 150)) : monta
+            ? lisatyt.slice(0, 5).map(rivi).join("\n")
+            : nimi(ensimmainen),
+        thumbnail: linkki(lista ? lista.kuva : ensimmainen.kuva, 1000),
+        fields: [
+            kentta("Lähde", lahdeNimi(lahde)),
+            kentta("Lisätty", lisatyt.length),
+            ...(lista || ohitettu ? [kentta("Ohitettu", `${lista?.maaraVahintaan ? "Vähintään " : ""}${ohitettu}`)] : []),
+            ...(kesto !== null ? [kentta("Lisättyjen kesto", aika(kesto))] : []),
+            kentta("Jonossa yhteensä", jonoPituus)
+        ],
+        ...(lista?.maararaja ? { footer: `Soittolistan käsittelyraja on ${lista.maararaja} kappaletta.` } : {})
+    });
+    return nakyma(embed, [riviPainikkeita(jonopainike(soitin))]);
+}
+
+function hakuNakyma(kappaleet, valintaId, peruutusId) {
+    const rivit = kappaleet.map(k => `**${nimi(k, { lyhyt: true, artisti: false })}**\n${[
+        k.artisti && turvallinen(rajaa(k.artisti, 60)), aika(k.kesto), lahdeNimi(k.lahde)
+    ].filter(Boolean).join(" · ")}`);
+    const valikko = new StringSelectMenuBuilder().setCustomId(valintaId).setPlaceholder("Valitse kappale")
+        .addOptions(kappaleet.map((k, i) => ({
+            label: rajaa(k.otsikko, 100) || `Kappale ${i + 1}`,
+            description: rajaa([k.artisti, aika(k.kesto), lahdeNimi(k.lahde)].filter(Boolean).join(" · "), 100),
+            value: String(i)
+        })));
+    return nakyma(info({ title: "Hakutulokset", description: rivit.join("\n\n") }), [
+        riviPainikkeita(valikko),
+        riviPainikkeita(new ButtonBuilder().setCustomId(peruutusId).setLabel("Peruuta").setStyle(ButtonStyle.Secondary))
+    ]);
+}
+
+function virheKooste(maara, esimerkit) {
+    return virhe(esimerkit.map(t => `${nimi(t.kappale)}\n${turvallinen(rajaa(t.viesti, 240))}`).join("\n\n"),
+        null, `Soittolistalta ohitettu ${maara} kappaletta`);
+}
+
+module.exports = {
+    turvallinen, aika, nimi, rivi, onnistui, virhe, virheKooste, soitinNakyma, jonoNakyma,
+    lisattyNakyma, hakuNakyma, TOISTOTILAN_NIMET
+};

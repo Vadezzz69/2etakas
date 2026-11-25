@@ -178,16 +178,6 @@ function lahteenNimi(url) {
     return "muu";
 }
 
-function youtubeHakuavain(url) {
-    const artisti = url.searchParams.get("artist");
-    const nimi = url.searchParams.get("title") ??
-        url.searchParams.get("track") ??
-        url.searchParams.get("song");
-    if (!nimi?.trim()) return null;
-    const haku = [artisti, nimi].filter(Boolean).join(" ").trim();
-    return haku ? haku.slice(0, HAKU_MAX_PITUUS) : null;
-}
-
 function onTarkoituksellaSaavuttamaton(err) {
     const luokka = ytdlp.stderrDiagnostiikka(err?.stderr ?? err?.yksityiskohta ?? err?.message).stderrLuokka;
     return SOUNDCLOUD_ESTOVIRHEET.has(luokka);
@@ -450,13 +440,14 @@ function sallittuIsanta(host, sallitut) {
 
 /** Onko linkki kokonainen soittolista/albumi (ei yksittäinen kappale)? */
 function onListaUrl(url) {
-    const host = url.hostname.toLowerCase();
-    const polku = url.pathname.toLowerCase();
-
-    if (host.endsWith("youtube.com")) return polku === "/playlist";
-    if (host.endsWith("soundcloud.com")) return polku.includes("/sets/");
-    if (host.endsWith("bandcamp.com")) return polku.startsWith("/album/");
-    return false;
+    const polku = url.pathname.toLowerCase().replace(/\/$/, "");
+    const lahde = lahteenNimi(url);
+    if (lahde === "YouTube") return polku === "/playlist" && Boolean(url.searchParams.get("list"));
+    if (lahde === "SoundCloud") {
+        return /^\/[^/]+\/sets\/[^/]+/.test(polku) ||
+            (/^api(?:-v2)?\.soundcloud\.com$/.test(url.hostname) && polku.startsWith("/playlists/"));
+    }
+    return sallittuIsanta(url.hostname, ["bandcamp.com"]) && polku.startsWith("/album/");
 }
 
 // ---------------------------------------------------------------------------
@@ -485,16 +476,19 @@ function tietueet(data) {
  * @property {boolean} suoraSyote      käyttäjä antoi lähdelinkin suoraan
  */
 
-function onSoundCloudPreview(kappale) {
-    if (!kappale) return false;
-    const onSoundCloud = kappale.lahde === "SoundCloud" ||
-        kappale.hakulahde === "soundcloud" ||
-        /soundcloud\.com/i.test(kappale.url ?? "");
-    if (!onSoundCloud) return false;
+function onSoundCloud(kappale) {
+    const url = jasennaUrl(kappale.url ?? "");
+    if (url) return lahteenNimi(url) === "SoundCloud";
+    return /^soundcloud(?::|$)/i.test(kappale.lahde ?? "") || kappale.hakulahde === "soundcloud";
+}
 
-    if (kappale.esikatselu) return true;
-    if (typeof kappale.kesto === "number" && kappale.kesto > 0 && kappale.kesto <= 30) return true;
-    return false;
+function onSoundCloudPreview(kappale, metadata = {}) {
+    if (!onSoundCloud(kappale)) return false;
+    const { policy, duration, full_duration, formats } = metadata;
+    const aaniformaatit = formats?.filter(f => f.acodec !== "none") ?? [];
+    return Boolean(kappale.esikatselu || policy === "SNIP" ||
+        (Number.isFinite(duration) && Number.isFinite(full_duration) && duration < full_duration) ||
+        (aaniformaatit.length && aaniformaatit.every(f => ytdlp.onPreviewFormaatti(f.format_id))));
 }
 
 function ytdlpKappale(e, { pyytaja, hakulahde, suoraSyote = false }) {
@@ -508,22 +502,24 @@ function ytdlpKappale(e, { pyytaja, hakulahde, suoraSyote = false }) {
 
     const kuvat = Array.isArray(e.thumbnails) ? e.thumbnails : [];
     const kuva = e.thumbnail ?? kuvat.at(-1)?.url ?? null;
-    const lahde = siivoa(e.extractor_key ?? e.ie_key ?? "", 30).replace(/Youtube/i, "YouTube") || "Verkko";
-    const otsikko = [e.track, e.title].find(arvo => typeof arvo === "string" && arvo.trim()) ?? "Tuntematon kappale";
+    const osoite = jasennaUrl(url);
+    const nimettyLahde = osoite ? lahteenNimi(osoite) : "muu";
+    const lahde = siivoa(e.extractor_key ?? e.ie_key ?? "", 30).replace(/Youtube/i, "YouTube") ||
+        (nimettyLahde === "muu" ? "Verkko" : nimettyLahde);
+    // SoundCloudin kevyissä settituloksissa on usein pelkkä kappaleen osoite.
+    const tunnus = nimettyLahde === "SoundCloud" && /^\/[^/]+\/[^/]+$/.test(osoite?.pathname ?? "")
+        ? osoite.pathname.split("/")[2].replace(/-/g, " ")
+        : null;
+    const otsikko = [e.track, e.title].find(arvo => typeof arvo === "string" && arvo.trim() && arvo !== url)
+        ?? tunnus ?? "Tuntematon kappale";
     const artisti = [
         e.artist,
         ...(Array.isArray(e.artists) ? e.artists : []),
         e.uploader,
         e.channel
     ].find(arvo => typeof arvo === "string" && arvo.trim());
-    const onSoundCloud = lahde === "SoundCloud" || hakulahde === "soundcloud" || /soundcloud\.com/i.test(url);
     const kesto = Number.isFinite(e.duration) ? Math.round(e.duration) : null;
-    const esikatselu = Boolean(
-        e.policy === "SNIP" ||
-        (Number.isFinite(e.full_duration) && Number.isFinite(e.duration) && e.duration < e.full_duration) ||
-        (onSoundCloud && kesto !== null && kesto <= 30) ||
-        /\b(?:preview|snippet)\b/i.test(otsikko)
-    );
+    const esikatselu = onSoundCloudPreview({ url, lahde, hakulahde }, e);
 
     return {
         otsikko: siivoa(otsikko),
@@ -546,7 +542,7 @@ function suodata(kappaleet, asetukset) {
     const hylkaysSyyt = { suoraLahetys: 0, liianPitka: 0, muu: 0 };
 
     const kelvolliset = kappaleet.filter(k => {
-        const esikatselu = Boolean(k.esikatselu || onSoundCloudPreview(k));
+        const esikatselu = onSoundCloudPreview(k);
         const kelpaa = !k.suora && !esikatselu && (k.kesto === null || k.kesto <= asetukset.maxKestoS);
         if (!kelpaa) {
             hylatty++;
@@ -698,15 +694,20 @@ async function haeKappaleet(syote, { pyytaja, hakulahde, asetukset }) {
             return { kappaleet, hylatty: 0, lahde: "Spotify" };
         }
 
-        const lista = onListaUrl(url);
+        const tunnettuLista = onListaUrl(url);
+        const lyhytSoundCloud = url.hostname === "on.soundcloud.com";
+        const haeListana = tunnettuLista || lyhytSoundCloud;
+        const lahde = lahteenNimi(url);
+        const max = asetukset.maxLista;
         let data;
         const alku = Date.now();
         try {
-            data = await ytdlp.tiedot(url.href, { lista, max: asetukset.maxLista });
+            data = await ytdlp.tiedot(url.href, {
+                lista: haeListana,
+                max: haeListana ? max + 1 : max,
+                ohitaListavirheet: tunnettuLista
+            });
         } catch (err) {
-            const lahde = lahteenNimi(url);
-            const stderrLuokka = ytdlp.stderrDiagnostiikka(err?.stderr ?? err?.yksityiskohta).stderrLuokka;
-            const soundCloudHaku = youtubeHakuavain(url);
             lokitaHaku(hakuId, "linkki-virhe", {
                 syote: "linkki",
                 hakutapa: "suora-linkki",
@@ -714,76 +715,55 @@ async function haeKappaleet(syote, { pyytaja, hakulahde, asetukset }) {
                 ...ytdlpDiagnostiikka(err),
                 kestoMs: Date.now() - alku
             });
-
-            if (
-                lahde === "YouTube" &&
-                !onTarkoituksellaSaavuttamaton(err) &&
-                onTunnettuHakuvirhe(err) &&
-                !ytDlpEiKaynnisty(err)
-            ) {
-                if (!soundCloudHaku) {
-                    lokitaHaku(hakuId, "varahaku-ohitettiin", {
-                        lahde: "soundcloud",
-                        syy: "hakusanaa-ei-saatavilla"
-                    });
-                    throw new MusiikkiVirhe(
-                        "YouTube-linkin metatietoja ei saatu. SoundCloud-varahaku tarvitsee kappaleen nimen — anna artisti ja kappaleen nimi tai SoundCloud-linkki."
-                    );
-                }
-
-                lokitaHaku(hakuId, "varahaku-alkoi", {
-                    lahde: "soundcloud",
-                    syy: stderrLuokka
-                });
-
-                try {
-                    const varahaku = await haeTekstiLahteesta(
-                        soundCloudHaku,
-                        { pyytaja, lahde: "soundcloud", asetukset, hakuId }
-                    );
-                    if (varahaku.kappaleet.length) {
-                        lokitaHaku(hakuId, "haku-valmis", {
-                            lahde: "soundcloud",
-                            tuloksia: varahaku.kappaleet.length,
-                            hakutapa: varahaku.hakutapa,
-                            valinnanSyy: varahaku.valinnanSyy,
-                            lopullinenTulos: "tuloksia"
-                        });
-                        return {
-                            kappaleet: varahaku.kappaleet,
-                            hylatty: varahaku.hylatty,
-                            lahde: varahaku.kappaleet[0].lahde,
-                            valittavat: true,
-                            hakutapa: varahaku.hakutapa,
-                            valinnanSyy: varahaku.valinnanSyy,
-                            arviot: varahaku.arviot,
-                            hakuId
-                        };
-                    }
-                } catch (soundCloudVirhe) {
-                    if (!onTunnettuHakuvirhe(soundCloudVirhe)) throw soundCloudVirhe;
-                }
-
-                lokitaHaku(hakuId, "varahaku-epaonnistui", {
-                    lahde: "soundcloud",
-                    lopullinenTulos: "ei-tuloksia"
-                });
-                throw new MusiikkiVirhe(
-                    "YouTube-linkin tietoja ei saatu haettua, eikä vastaavaa kappaletta löytynyt SoundCloudista. Kokeile kappaleen nimeä."
-                );
-            }
-
             throw muunnettuYtdlpVirhe(err);
         }
-        const kaikki = tietueet(data).map(e => ytdlpKappale(e, {
-            pyytaja,
-            hakulahde: haku,
-            suoraSyote: true
-        })).filter(Boolean);
-        const { kelvolliset, hylatty } = suodata(kaikki, asetukset);
-        lokitaHaku(hakuId, "linkki-valmis", { tuloksia: kelvolliset.length, hylatty });
 
-        return { kappaleet: kelvolliset.slice(0, asetukset.maxLista), hylatty, lahde: kelvolliset[0]?.lahde ?? "Verkko" };
+        const lista = tunnettuLista || (lyhytSoundCloud && Array.isArray(data?.entries));
+        if (lista && (!Array.isArray(data?.entries) || data.availability === "private")) {
+            throw new MusiikkiVirhe(data?.availability === "private"
+                ? "Soittolista on yksityinen."
+                : "Soittolistaa ei saatu avattua. Tarkista linkki ja listan näkyvyys.");
+        }
+
+        if (!lista && Array.isArray(data?.entries)) {
+            throw new MusiikkiVirhe("Anna yksittäisen kappaleen tai tuetun soittolistan linkki.");
+        }
+        const tietueetListassa = lista ? data.entries.slice(0, max) : tietueet(data);
+        const kaikki = tietueetListassa
+            .filter(e => e && !["private", "premium_only", "subscriber_only", "needs_auth"].includes(e.availability) &&
+                !/^\[(?:Private|Deleted|Unavailable) video\]$/i.test(e.title ?? ""))
+            .map(e => ytdlpKappale(e, { pyytaja, hakulahde: haku, suoraSyote: true }))
+            .filter(k => {
+                if (!k) return false;
+                if (!lista) return true;
+                const kappaleUrl = jasennaUrl(k.url);
+                return kappaleUrl && !kappaleUrl.username && !kappaleUrl.password &&
+                    sallittuIsanta(kappaleUrl.hostname, asetukset.sallitutSivut) &&
+                    !onListaUrl(kappaleUrl) && (lahde === "muu" || lahteenNimi(kappaleUrl) === lahde);
+            })
+            .map(k => lista ? k : { ...k, url: url.href });
+        const { kelvolliset } = suodata(kaikki, asetukset);
+        const loydetty = lista
+            ? Math.max(data.entries.length, Number.isSafeInteger(data.playlist_count) ? data.playlist_count : 0)
+            : tietueetListassa.length;
+        const hylatty = loydetty - kelvolliset.length;
+        lokitaHaku(hakuId, "linkki-valmis", { tuloksia: kelvolliset.length, hylatty });
+        const kuva = lista && (data.thumbnail || (Array.isArray(data.thumbnails) && data.thumbnails.at(-1)?.url));
+
+        return {
+            kappaleet: kelvolliset,
+            hylatty,
+            lahde: lahde === "muu" ? kelvolliset[0]?.lahde ?? "Verkko" : lahde,
+            ...(lista ? {
+                lista: {
+                    nimi: siivoa(data.title) || "Soittolista",
+                    ...(typeof kuva === "string" ? { kuva } : {}),
+                    loydetty,
+                    maararaja: loydetty > max ? max : null,
+                    maaraVahintaan: data.entries.length > max && !(data.playlist_count >= data.entries.length)
+                }
+            } : {})
+        };
     }
 
     // --- Tekstihaku ---
@@ -866,11 +846,11 @@ function muunnettuYtdlpVirhe(err) {
         return new MusiikkiVirhe("Haku kesti liian kauan. Yritä hetken päästä uudelleen.");
     }
     if (err?.message === "YTDLP_VIRHE") {
-        const k = (err.yksityiskohta ?? "").toLowerCase();
+        const k = (err.yksityiskohta ?? err.stderr ?? "").toLowerCase();
         if (k.includes("sign in") || k.includes("not a bot")) {
             return new MusiikkiVirhe("YouTube esti haun palvelimelta (kirjautumisvaatimus). Ylläpito voi lisätä evästeet (YTDLP_COOKIES) tai kokeilla SoundCloud-hakua.");
         }
-        if (/private (video|track)|this (video|track) is private/.test(k)) {
+        if (/private (video|track|playlist)|this (video|track|playlist) is private/.test(k)) {
             return new MusiikkiVirhe("Kappale on yksityinen eikä sitä voi soittaa.");
         }
         if (/removed by the uploader|(?:video|track) has been removed|has been deleted/.test(k)) {
@@ -901,14 +881,6 @@ function muunnettuYtdlpVirhe(err) {
     return err;
 }
 
-async function tiedotTai(haku) {
-    try {
-        return await haku();
-    } catch (err) {
-        throw muunnettuYtdlpVirhe(err);
-    }
-}
-
 /** Hakulause sille kun kappale pitää löytää nimellä (esim. Spotifyn kappaleet). */
 function hakulause(kappale) {
     const etuliite = kappale.hakulahde === "soundcloud" ? "scsearch1" : "ytsearch1";
@@ -920,6 +892,8 @@ module.exports = {
     MusiikkiVirhe,
     haeKappaleet,
     hakulause,
+    onSoundCloud,
+    onSoundCloudPreview,
     // testejä varten
     jasennaUrl,
     sallittuIsanta,

@@ -1,6 +1,6 @@
 const { SlashCommandBuilder } = require("discord.js");
-const { valmisteleOhjaus } = require("../../utils/musiikki/ohjain");
-const { jonoEmbed } = require("../../utils/musiikki/muotoilu");
+const { haeSoitin } = require("../../utils/musiikki/soitin");
+const UI = require("../../utils/musiikki/muotoilu");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -8,9 +8,7 @@ module.exports = {
         .setDescription("Näyttää musiikkijonon."),
 
     async execute(interaction) {
-        const soitin = await valmisteleOhjaus(interaction, { vaatiiKanavan: false });
-        if (!soitin) return;
-
-        await interaction.reply({ embeds: [jonoEmbed(soitin)] });
+        if (!interaction.inGuild()) return interaction.reply({ ...UI.virhe("Musiikki toimii vain palvelimilla."), ephemeral: true });
+        await interaction.reply(UI.jonoNakyma(haeSoitin(interaction.guildId)));
     }
 };

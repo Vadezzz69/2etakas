@@ -1,8 +1,6 @@
 const { SlashCommandBuilder } = require("discord.js");
-const { satunnainen } = require("../../utils/satunnainen");
 const { valmisteleOhjaus } = require("../../utils/musiikki/ohjain");
-const { nytEmbed } = require("../../utils/musiikki/muotoilu");
-const { EI_SOI } = require("../../utils/musiikki/viestit");
+const UI = require("../../utils/musiikki/muotoilu");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -11,13 +9,6 @@ module.exports = {
 
     async execute(interaction) {
         const soitin = await valmisteleOhjaus(interaction, { vaatiiKanavan: false });
-        if (!soitin) return;
-
-        const tiedot = soitin.nytTiedot();
-        if (!tiedot.kappale) {
-            return interaction.reply({ content: satunnainen(EI_SOI), ephemeral: true });
-        }
-
-        await interaction.reply({ embeds: [nytEmbed(tiedot)] });
+        if (soitin) await interaction.reply(UI.soitinNakyma(soitin));
     }
 };

@@ -1,7 +1,6 @@
 const { SlashCommandBuilder } = require("discord.js");
-const { satunnainen } = require("../../utils/satunnainen");
 const { valmisteleOhjaus } = require("../../utils/musiikki/ohjain");
-const { TAUOLLA, JATKUU, EI_SOI } = require("../../utils/musiikki/viestit");
+const UI = require("../../utils/musiikki/muotoilu");
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -11,12 +10,9 @@ module.exports = {
     async execute(interaction) {
         const soitin = await valmisteleOhjaus(interaction);
         if (!soitin) return;
-
         const tila = soitin.tauko();
-        if (!tila) {
-            return interaction.reply({ content: satunnainen(EI_SOI), ephemeral: true });
-        }
-
-        await interaction.reply(satunnainen(tila === "tauolla" ? TAUOLLA : JATKUU));
+        if (!tila) return interaction.reply({ ...UI.virhe("Tauotettavaa tai jatkettavaa kappaletta ei ole."), ephemeral: true });
+        soitin.paivitaPaneeli?.();
+        await interaction.reply({ ...UI.onnistui(tila === "tauolla" ? "Toisto tauolla" : "Toisto jatkuu"), ephemeral: true });
     }
 };

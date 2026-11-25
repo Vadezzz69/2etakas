@@ -12,7 +12,8 @@ const KATEGORIA_OTSIKOT = {
     fun: "🎭 Komitean ilveilyt",
     pelit: "🎮 Pelit",
     tilastot: "📊 Tilastot",
-    musiikki: "🎵 Musiikki"
+    musiikki: "🎵 Musiikki",
+    cards: "Komitea Cards"
 };
 
 // Discordin embed-kenttäraja on 1024 merkkiä. Pidetään pieni marginaali
@@ -105,7 +106,9 @@ module.exports = {
             return embed;
         });
 
-        await interaction.reply({ embeds: viesti });
+        await interaction.reply({ embeds: viesti.slice(0, 1) });
+        // Discordin 6000 merkin raja koskee viestin kaikkia embedejä yhteensä.
+        for (const embed of viesti.slice(1)) await interaction.followUp({ embeds: [embed] });
 
     }
 };
