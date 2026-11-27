@@ -108,3 +108,12 @@ valeääntä ja ajotesti käyttää valeinteraktioita.
    tietokanta on vahingoittunut, arvioi palautus erikseen testikopiossa.
    Tuotannon palautus vanhaan varmuuskopioon voi hävittää sen jälkeen syntyneet
    tiedot.
+
+## osu!-päivänhaaste
+
+Aja `002-osu-daily-challenges.sql` ensin testitietokantaan nykyisen
+`001-komitea.sql`-migraation jälkeen. Migraatio lisää taulun
+`osu_daily_challenges`, jonka avain on palvelin ja Suomen paikallinen päivämäärä.
+`komitea_panels` säilyttää nykyiset osu!-kanava-asetukset. Testaa päivänhaaste
+ennen kuin ajat migraation hyväksyttyyn kohdetietokantaan. Worker käyttää
+nykyistä `/api/batch`-reittiä.

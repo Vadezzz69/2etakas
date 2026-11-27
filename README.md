@@ -45,6 +45,29 @@ ja tallennettuja `!avainsana`-vastauksia (vaatii Message Content Intentin).
 - `!osu` arpoo yhden kartan kustakin osu!standardin kuudesta tähtiluokasta.
 - `!osu helppo` arpoo Easy- ja Normal-karttoja, `!osu keskitaso` Hard- ja Insane-karttoja ja `!osu vaikea` Expert- ja Expert+-karttoja.
 - Palvelimen hallintaoikeudella `!osu kanava #osu-haasteet` asettaa oman haastekanavan ja lähettää ohjeviestin sinne. Kanavan voi asettaa myös kirjoittamalla `!osu kanava` kyseisellä kanavalla.
+- `!osu Chief Keef Love Sosa` arpoo yhden hakusanaan sopivan ranked-kartan.
+- `!osu !erikoinen` arpoo yhden kartan, jolle löytyy erikoisuuden peruste oikeasta metadatasta. Anna halutessasi hakusana, esimerkiksi `!osu !erikoinen Chief Keef`.
+- `!osu päivänhaaste` (myös `!osu paivanhaaste`) näyttää palvelimen yhteisen päivän kartan. Päivä vaihtuu Suomen aikaa. Ota ensin käyttöön [D1-migraatio](migrations/README.md#osu-päivänhaaste).
+- Kun käytät `!osu kanava` nykyisellä haastekanavalla, botti päivittää vanhan ohjeviestinsä, jos viesti on edelleen muokattavissa.
+
+Kappalehaku ja erikoishaku käyttävät virallisen osu! API v2:n
+`GET /api/v2/beatmapsets/search` -reittiä. Luo osu!-tilin asetuksissa OAuth-sovellus
+ja aseta sen tunnus `OSU_CLIENT_ID`-muuttujaan ja salaisuus turvallisesti
+`OSU_CLIENT_SECRET`-muuttujaan. Botti hakee `public`-käyttöoikeuden
+`client_credentials`-menettelyllä ja uusii lyhytikäisen käyttöavaimen tarvittaessa.
+Salli HTTPS-yhteydet osoitteeseen `osu.ppy.sh`.
+
+Vierashaku `/beatmapsets/search` on verkkosivuston reitti. Se tukee vanhoissa
+arvonnoissa käytettyä `page`-sivutusta, mutta osu-web voi jättää vieraan
+hakusanan ja lisäsuodattimet käsittelemättä. API v2 tukee hakusanaa (`q`),
+pelimuotoa (`m`), statusta (`s`), tyylilajia (`g`), NSFW-rajausta ja
+`cursor_string`-sivutusta. Botti rajaa tulokset myös paikallisesti.
+Erikoisuuden perusteena käytetään karttasetin tagia, Novelty-tyylilajia tai
+poikkeuksellista BPM-arvoa. Vaikeustasoarvonnat ja päivänhaaste käyttävät
+vierashakua ja toimivat ilman OAuth-sovellusta.
+
+Aja osu!-testit komennolla `node --test scripts/osutesti.js` (Node.js 24).
+
 
 ## Musiikki
 
