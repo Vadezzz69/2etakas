@@ -40,6 +40,7 @@ const vastaus = (beatmapsets, cursor_string) => Response.json({ beatmapsets, cur
 
 function viesti(kohde = {}) {
     return {
+        id: "123456789012345678",
         content: "",
         author: { id: "user" },
         guild: { id: "guild", members: { me: { id: "bot" } }, channels: { cache: new Map() } },
@@ -255,6 +256,24 @@ test("samanaikaiset prosessit lukevat saman SQLite-rivin, virhe ei näytä pysyv
     const virhe = await a(viesti(), ["paivanhaaste"]);
     assert.match(virhe.content, /Pysyvää päivänhaastetta ei saatu/);
     assert.equal(virhe.embeds, undefined);
+});
+
+test("eri prosessit lähettävät samalle Discord-viestille saman yksilöintitunnisteen", async t => {
+    kaytaKantaa(t);
+    kaytaHakua(t);
+    const a = lataaOsu();
+    const b = lataaOsu();
+    const viestit = [viesti(), viesti()];
+    const [yksi, kaksi] = await Promise.all(viestit.map((v, i) => [a, b][i](v, ["päivänhaaste"])));
+    assert.equal(yksi.nonce, viestit[0].id);
+    assert.equal(kaksi.nonce, yksi.nonce);
+    assert.equal(yksi.enforceNonce, true);
+    assert.equal(kaksi.enforceNonce, true);
+
+    const uusi = viesti({ id: "123456789012345679" });
+    const tulos = await a(uusi, ["päivänhaaste"]);
+    assert.equal(tulos.nonce, uusi.id);
+    assert.notEqual(tulos.nonce, yksi.nonce);
 });
 
 test("aikakatkaisu vapauttaa haun ja HTTP 429 pysäyttää uudet pyynnöt", async t => {

@@ -295,8 +295,12 @@ function arvoLista(kartat, valittu) {
     });
 }
 
-function reply(message, content) {
-    return message.reply({ content, allowedMentions: EI_MAININTOJA });
+function reply(message, vastaus) {
+    const payload = typeof vastaus === "string" ? { content: vastaus } : vastaus;
+    // Discord yhdistää samalla noncella lähetetyt vastaukset myös eri prosesseista.
+    return message.reply({
+        ...payload, nonce: message.id, enforceNonce: true, allowedMentions: EI_MAININTOJA
+    });
 }
 
 function haeKanava(guildId) {
@@ -418,10 +422,9 @@ function naytaKartta(message, kartta, otsikko, paiva) {
     ];
     const fields = tiedot.filter(([, value]) => value).map(([name, value]) => ({ name, value, inline: name !== "Miksi erikoinen?" }));
     const linkki = new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel("Avaa kartta").setURL(kartta.linkki);
-    return message.reply({
+    return reply(message, {
         embeds: [info({ title: otsikko, fields, image: kartta.kuva, url: kartta.linkki })],
-        components: [new ActionRowBuilder().addComponents(linkki)],
-        allowedMentions: EI_MAININTOJA
+        components: [new ActionRowBuilder().addComponents(linkki)]
     });
 }
 
@@ -445,9 +448,8 @@ async function kasitteleOsu(message, [toiminto, ...argumentit] = []) {
         }
         if (!valittu || TASOT.has(valittu)) {
             const kartat = await haeKartat();
-            return await message.reply({
-                embeds: [info({ title: "🎯 osu!-haastelista", fields: arvoLista(kartat, valittu) })],
-                allowedMentions: EI_MAININTOJA
+            return await reply(message, {
+                embeds: [info({ title: "🎯 osu!-haastelista", fields: arvoLista(kartat, valittu) })]
             });
         }
 
